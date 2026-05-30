@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PSC Indicadores MVP</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Gestao de Indicadores</h1>
+      <p class="subtitle">MVP simples para gestores de area e executivos</p>
+
+      <section id="status" class="status"></section>
+
+      <section id="login-section" class="card">
+        <h2>Login</h2>
+        <form id="login-form" class="form-grid">
+          <label>
+            Email
+            <input id="email" type="email" required />
+          </label>
+          <label>
+            Senha
+            <input id="password" type="password" required />
+          </label>
+          <button type="submit">Entrar</button>
+        </form>
+      </section>
+
+      <section id="dashboard" class="hidden">
+        <div class="toolbar card">
+          <div>
+            <strong id="user-name"></strong>
+            <span id="user-role" class="muted"></span>
+          </div>
+          <div class="toolbar-actions">
+            <label>
+              Ano
+              <input id="year-input" type="number" min="2000" max="2100" />
+            </label>
+            <button id="reload-btn" type="button">Recarregar</button>
+            <button id="new-indicator-btn" type="button" class="hidden">Novo indicador</button>
+            <button id="shutdown-btn" type="button" class="danger hidden">Encerrar app</button>
+            <button id="logout-btn" type="button" class="danger">Sair</button>
+          </div>
+        </div>
+
+        <section class="card">
+          <h2>Indicadores</h2>
+          <div id="executive-filters" class="toolbar-actions hidden filters-row">
+            <label>
+              Buscar indicador
+              <input
+                id="exec-indicator-filter"
+                type="text"
+                placeholder="Ex: faturamento"
+              />
+            </label>
+            <label>
+              Filtrar por area
+              <select id="exec-area-filter">
+                <option value="">Todas as areas</option>
+              </select>
+            </label>
+          </div>
+          <div class="table-wrap">
+            <table id="indicators-table"></table>
+          </div>
+        </section>
+
+        <section id="weekly-panel" class="card hidden">
+          <h2>Valores semanais</h2>
+          <p id="weekly-title" class="muted"></p>
+          <form id="weekly-form" class="week-grid"></form>
+        </section>
+
+        <section id="action-plan-panel" class="card hidden">
+          <h2>Novo plano de acao</h2>
+          <p id="action-plan-indicator" class="muted"></p>
+          <form id="action-plan-form" class="form-grid">
+            <input id="ap-indicator-id" type="hidden" />
+            <label>
+              Titulo
+              <input id="ap-title" required />
+            </label>
+            <label>
+              Descricao do problema
+              <textarea id="ap-problem" required></textarea>
+            </label>
+            <label>
+              Acao esperada
+              <textarea id="ap-expected" required></textarea>
+            </label>
+            <label>
+              Responsavel (Bitrix24)
+              <input
+                id="ap-responsible-search"
+                autocomplete="off"
+                placeholder="Digite pelo menos 2 letras para buscar"
+                required
+              />
+              <input id="ap-bitrix-user-id" type="hidden" />
+              <div id="ap-user-suggestions" class="suggestions hidden"></div>
+              <small id="ap-selected-user" class="muted"></small>
+            </label>
+            <label>
+              Prazo
+              <input id="ap-due-date" type="date" />
+            </label>
+            <button type="submit">Salvar plano de acao</button>
+          </form>
+        </section>
+
+        <section id="create-indicator-panel" class="card hidden">
+          <h2>Cadastrar indicador</h2>
+          <form id="create-indicator-form" class="form-grid">
+            <label>
+              Area
+              <select id="ci-area" required></select>
+            </label>
+            <label>
+              Nome
+              <input id="ci-name" required />
+            </label>
+            <label>
+              Descricao
+              <textarea id="ci-description"></textarea>
+            </label>
+            <label>
+              Agregacao
+              <select id="ci-aggregation" required>
+                <option value="sum">sum</option>
+                <option value="avg">avg</option>
+              </select>
+            </label>
+            <label>
+              Unidade
+              <input id="ci-unit" />
+            </label>
+            <label>
+              Meta
+              <input id="ci-target" placeholder="Ex: 100.5" />
+            </label>
+            <div class="toolbar-actions">
+              <button type="submit">Salvar indicador</button>
+              <button id="ci-cancel" type="button">Cancelar</button>
+            </div>
+          </form>
+        </section>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

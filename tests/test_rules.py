@@ -1,7 +1,19 @@
-from core.domain.models import InputData
-from core.domain.rules import validate
+from decimal import Decimal
 
-def test_negative_value_creates_issue():
-    issues = validate(InputData(value=-1))
-    assert len(issues) == 1
-    assert issues[0].code == "NEGATIVE_VALUE"
+from core.domain.rules import calculate_monthly_value
+
+
+def test_monthly_calculation_sum() -> None:
+    result = calculate_monthly_value(
+        values=[Decimal("10"), Decimal("20"), Decimal("5")],
+        aggregation_type="sum",
+    )
+    assert result == Decimal("35")
+
+
+def test_monthly_calculation_avg() -> None:
+    result = calculate_monthly_value(
+        values=[Decimal("10"), Decimal("20")],
+        aggregation_type="avg",
+    )
+    assert result == Decimal("15")
