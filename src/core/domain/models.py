@@ -44,6 +44,15 @@ class User:
 class Area:
     id: str
     name: str
+    hex_color: str | None = None
+    is_active: bool = True
+
+
+@dataclass(frozen=True)
+class IndicatorUnit:
+    id: str
+    code: str
+    label: str
     is_active: bool = True
 
 
@@ -52,11 +61,12 @@ class Indicator:
     id: str
     area_id: str
     area_name: str | None
+    area_hex_color: str | None
     name: str
     description: str | None
     aggregation_type: AggregationType
+    unit_id: str | None
     unit: str | None
-    target_value: Decimal | None
     is_active: bool
     created_by: str | None
 
@@ -77,18 +87,33 @@ class IndicatorTableRow:
     indicator_name: str
     area_id: str
     area_name: str | None
+    area_hex_color: str | None
+    description: str | None
     aggregation_type: AggregationType
+    unit_id: str | None
     unit: str | None
-    target_value: Decimal | None
     monthly_values: dict[int, Decimal | None]
+    monthly_targets: dict[int, Decimal | None]
+    below_target: dict[int, bool]
+
+
+@dataclass(frozen=True)
+class IndicatorMonthTarget:
+    indicator_id: str
+    year: int
+    month: int
+    target_value: Decimal
+    created_by: str | None
+    updated_by: str | None
 
 
 @dataclass(frozen=True)
 class NewActionPlan:
     indicator_id: str
     title: str
-    problem_description: str
-    expected_action: str
+    ocorrencia: str
+    identificacao_causa: str
+    proposta_solucao: str
     bitrix_responsible_id: str | None
     responsible_name: str
     responsible_email: str | None
@@ -103,8 +128,9 @@ class ActionPlan:
     id: str
     indicator_id: str
     title: str
-    problem_description: str
-    expected_action: str
+    ocorrencia: str
+    identificacao_causa: str
+    proposta_solucao: str
     bitrix_responsible_id: str | None
     responsible_name: str
     responsible_email: str | None
@@ -135,8 +161,7 @@ class NewIndicator:
     name: str
     description: str | None
     aggregation_type: AggregationType
-    unit: str | None
-    target_value: Decimal | None
+    unit_id: str
     created_by: str
 
 

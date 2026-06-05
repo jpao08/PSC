@@ -22,7 +22,7 @@ from core.domain.models import (
     User,
     ValidationError,
 )
-from core.domain.rules import ensure_can_view_indicator, ensure_user_active
+from core.domain.rules import ensure_can_view_indicator, ensure_user_active, get_month_ranges
 
 
 class LoginRequest(BaseModel):
@@ -33,15 +33,16 @@ class LoginRequest(BaseModel):
 class WeeklyValuePayload(BaseModel):
     year: int
     month: int = Field(ge=1, le=12)
-    week_number: int = Field(ge=1, le=6)
+    week_number: int = Field(ge=1, le=4)
     value: str
 
 
 class ActionPlanPayload(BaseModel):
     indicator_id: str
     title: str
-    problem_description: str
-    expected_action: str
+    ocorrencia: str
+    identificacao_causa: str
+    proposta_solucao: str
     bitrix_responsible_id: str
     responsible_name: str
     responsible_email: str | None = None
@@ -53,8 +54,21 @@ class CreateIndicatorPayload(BaseModel):
     name: str
     description: str | None = None
     aggregation_type: str
-    unit: str | None = None
-    target_value: str | None = None
+    unit_id: str
+
+
+class UpdateIndicatorPayload(BaseModel):
+    area_id: str
+    name: str
+    description: str | None = None
+    aggregation_type: str
+    unit_id: str
+
+
+class MonthlyTargetPayload(BaseModel):
+    year: int
+    month: int = Field(ge=1, le=12)
+    target_value: str
 
 
 def _to_http_error(error: DomainError) -> HTTPException:
@@ -101,8 +115,9 @@ def _serialize_action_plan(plan: ActionPlan) -> dict[str, Any]:
         "id": plan.id,
         "indicator_id": plan.indicator_id,
         "title": plan.title,
-        "problem_description": plan.problem_description,
-        "expected_action": plan.expected_action,
+        "ocorrencia": plan.ocorrencia,
+        "identificacao_causa": plan.identificacao_causa,
+        "proposta_solucao": plan.proposta_solucao,
         "bitrix_responsible_id": plan.bitrix_responsible_id,
         "responsible_name": plan.responsible_name,
         "responsible_email": plan.responsible_email,
@@ -245,12 +260,31 @@ def create_api_router(container: Container) -> APIRouter:
                 {
                     "id": area.id,
                     "name": area.name,
+                    "hex_color": area.hex_color,
                     "is_active": area.is_active,
                 }
                 for area in areas
             ]
         except DomainError as error:
             raise _to_http_error(error) from error
+
+    @router.get("/indicator-units")
+    def list_indicator_units(current_user: User = Depends(get_current_user)) -> list[dict[str, Any]]:
+        try:
+            if current_user.role != "executivo":
+                raise AuthorizationError("Somente executivo pode listar unidades para cadastro.")
+            units = container.indicator_repository.list_units()
+        except DomainError as error:
+            raise _to_http_error(error) from error
+
+        return [
+            {
+                "id": unit.id,
+                "code": unit.code,
+                "label": unit.label,
+            }
+            for unit in units
+        ]
 
     @router.get("/bitrix-users")
     def search_bitrix_users(
@@ -292,6 +326,8 @@ def create_api_router(container: Container) -> APIRouter:
                 {
                     "month": month,
                     "value": _decimal_to_float(row.monthly_values.get(month)),
+                    "monthly_target": _decimal_to_float(row.monthly_targets.get(month)),
+                    "below_target": bool(row.below_target.get(month, False)),
                 }
                 for month in range(1, 13)
             ]
@@ -301,9 +337,11 @@ def create_api_router(container: Container) -> APIRouter:
                     "indicator_name": row.indicator_name,
                     "area_id": row.area_id,
                     "area_name": row.area_name,
+                    "area_hex_color": row.area_hex_color,
+                    "description": row.description,
                     "aggregation_type": row.aggregation_type,
+                    "unit_id": row.unit_id,
                     "unit": row.unit,
-                    "target_value": _decimal_to_float(row.target_value),
                     "months": months,
                 }
             )
@@ -334,12 +372,16 @@ def create_api_router(container: Container) -> APIRouter:
             month=month,
         )
         by_week: dict[int, Decimal] = {item.week_number: item.value for item in values}
+        month_ranges = get_month_ranges(year=year, month=month)
         weeks = [
             {
                 "week_number": week_number,
+                "label": f"Faixa {week_number} ({start_day}-{end_day})",
+                "start_day": start_day,
+                "end_day": end_day,
                 "value": _decimal_to_float(by_week.get(week_number)),
             }
-            for week_number in range(1, 7)
+            for week_number, start_day, end_day in month_ranges
         ]
         return {
             "indicator_id": indicator_id,
@@ -385,8 +427,9 @@ def create_api_router(container: Container) -> APIRouter:
                 user=current_user,
                 indicator_id=payload.indicator_id,
                 title=payload.title,
-                problem_description=payload.problem_description,
-                expected_action=payload.expected_action,
+                ocorrencia=payload.ocorrencia,
+                identificacao_causa=payload.identificacao_causa,
+                proposta_solucao=payload.proposta_solucao,
                 bitrix_responsible_id=payload.bitrix_responsible_id,
                 responsible_name=payload.responsible_name,
                 responsible_email=payload.responsible_email,
@@ -422,11 +465,6 @@ def create_api_router(container: Container) -> APIRouter:
         payload: CreateIndicatorPayload,
         current_user: User = Depends(get_current_user),
     ) -> dict[str, Any]:
-        target_value = (
-            _parse_decimal(payload.target_value, "target_value")
-            if payload.target_value
-            else None
-        )
         try:
             created = container.create_indicator.execute(
                 user=current_user,
@@ -434,8 +472,7 @@ def create_api_router(container: Container) -> APIRouter:
                 name=payload.name,
                 description=payload.description,
                 aggregation_type=payload.aggregation_type,
-                unit=payload.unit,
-                target_value=target_value,
+                unit_id=payload.unit_id,
             )
         except DomainError as error:
             raise _to_http_error(error) from error
@@ -447,8 +484,76 @@ def create_api_router(container: Container) -> APIRouter:
             "name": created.name,
             "description": created.description,
             "aggregation_type": created.aggregation_type,
+            "unit_id": created.unit_id,
             "unit": created.unit,
-            "target_value": _decimal_to_float(created.target_value),
+        }
+
+    @router.put("/indicators/{indicator_id}")
+    def update_indicator(
+        indicator_id: str,
+        payload: UpdateIndicatorPayload,
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        try:
+            updated = container.update_indicator.execute(
+                user=current_user,
+                indicator_id=indicator_id,
+                area_id=payload.area_id,
+                name=payload.name,
+                description=payload.description,
+                aggregation_type=payload.aggregation_type,
+                unit_id=payload.unit_id,
+            )
+        except DomainError as error:
+            raise _to_http_error(error) from error
+
+        return {
+            "id": updated.id,
+            "area_id": updated.area_id,
+            "area_name": updated.area_name,
+            "name": updated.name,
+            "description": updated.description,
+            "aggregation_type": updated.aggregation_type,
+            "unit_id": updated.unit_id,
+            "unit": updated.unit,
+        }
+
+    @router.delete("/indicators/{indicator_id}")
+    def delete_indicator(
+        indicator_id: str,
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, str]:
+        try:
+            container.delete_indicator.execute(user=current_user, indicator_id=indicator_id)
+        except DomainError as error:
+            raise _to_http_error(error) from error
+        return {"status": "deleted"}
+
+    @router.post("/indicators/{indicator_id}/monthly-target")
+    def upsert_monthly_target(
+        indicator_id: str,
+        payload: MonthlyTargetPayload,
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        target_value = _parse_decimal(payload.target_value, "target_value")
+        try:
+            saved = container.upsert_indicator_month_target.execute(
+                user=current_user,
+                indicator_id=indicator_id,
+                year=payload.year,
+                month=payload.month,
+                target_value=target_value,
+            )
+        except DomainError as error:
+            raise _to_http_error(error) from error
+
+        return {
+            "indicator_id": saved.indicator_id,
+            "year": saved.year,
+            "month": saved.month,
+            "target_value": _decimal_to_float(saved.target_value),
+            "created_by": saved.created_by,
+            "updated_by": saved.updated_by,
         }
 
     @router.post("/system/shutdown")

@@ -21,18 +21,37 @@ class ListIndicators:
             indicator_ids=indicator_ids,
             year=year,
         )
+        targets = self.indicator_repository.list_month_targets(
+            indicator_ids=indicator_ids,
+            year=year,
+        )
 
-        grouped: dict[tuple[str, int], list[Decimal]] = defaultdict(list)
+        grouped: dict[tuple[str, int], list[tuple[int, Decimal]]] = defaultdict(list)
         for item in values:
-            grouped[(item.indicator_id, item.month)].append(item.value)
+            grouped[(item.indicator_id, item.month)].append((item.week_number, item.value))
+
+        target_map = {
+            (item.indicator_id, item.month): item.target_value
+            for item in targets
+        }
 
         rows: list[IndicatorTableRow] = []
         for indicator in indicators:
             monthly_values: dict[int, Decimal | None] = {}
+            monthly_targets: dict[int, Decimal | None] = {}
+            below_target: dict[int, bool] = {}
             for month in range(1, 13):
                 monthly_values[month] = calculate_monthly_value(
                     values=grouped.get((indicator.id, month), []),
                     aggregation_type=indicator.aggregation_type,
+                    year=year,
+                    month=month,
+                )
+                monthly_targets[month] = target_map.get((indicator.id, month))
+                below_target[month] = (
+                    monthly_values[month] is not None
+                    and monthly_targets[month] is not None
+                    and monthly_values[month] < monthly_targets[month]
                 )
 
             rows.append(
@@ -41,10 +60,14 @@ class ListIndicators:
                     indicator_name=indicator.name,
                     area_id=indicator.area_id,
                     area_name=indicator.area_name,
+                    area_hex_color=indicator.area_hex_color,
+                    description=indicator.description,
                     aggregation_type=indicator.aggregation_type,
+                    unit_id=indicator.unit_id,
                     unit=indicator.unit,
-                    target_value=indicator.target_value,
                     monthly_values=monthly_values,
+                    monthly_targets=monthly_targets,
+                    below_target=below_target,
                 )
             )
         rows.sort(

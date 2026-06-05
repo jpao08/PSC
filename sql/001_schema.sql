@@ -61,7 +61,6 @@ create table if not exists indicators (
   description text null,
   aggregation_type text not null check (aggregation_type in ('sum', 'avg')),
   unit text null,
-  target_value numeric null,
   is_active boolean not null default true,
   created_by uuid null references users(id),
   created_at timestamptz not null default now(),

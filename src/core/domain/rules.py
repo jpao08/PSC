@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 import base64
 import hashlib
 import hmac
@@ -80,8 +81,28 @@ def ensure_month(month: int) -> None:
 
 
 def ensure_week(week_number: int) -> None:
-    if week_number < 1 or week_number > 6:
-        raise ValidationError("Semana deve estar entre 1 e 6.")
+    if week_number < 1 or week_number > 4:
+        raise ValidationError("Faixa deve estar entre 1 e 4.")
+
+
+def get_month_ranges(year: int, month: int) -> list[tuple[int, int, int]]:
+    ensure_month(month)
+    last_day = calendar.monthrange(year, month)[1]
+    return [
+        (1, 1, 7),
+        (2, 8, 14),
+        (3, 15, 21),
+        (4, 22, last_day),
+    ]
+
+
+def get_range_days_count(year: int, month: int, week_number: int) -> int:
+    ensure_week(week_number)
+    ranges = get_month_ranges(year=year, month=month)
+    for number, start_day, end_day in ranges:
+        if number == week_number:
+            return (end_day - start_day) + 1
+    raise ValidationError("Faixa mensal invalida.")
 
 
 def ensure_indicator_in_user_area(user: User, indicator: Indicator) -> None:
@@ -107,13 +128,27 @@ def ensure_required_text(value: str, field_name: str) -> str:
 
 
 def calculate_monthly_value(
-    values: Iterable[Decimal],
+    values: Iterable[tuple[int, Decimal]],
     aggregation_type: AggregationType,
+    year: int,
+    month: int,
 ) -> Decimal | None:
     collected = list(values)
     if not collected:
         return None
-    total = sum(collected, start=Decimal("0"))
+
+    raw_values = [value for _, value in collected]
+    total = sum(raw_values, start=Decimal("0"))
     if aggregation_type == "sum":
         return total
-    return total / Decimal(len(collected))
+
+    weighted_total = Decimal("0")
+    total_days = Decimal("0")
+    for week_number, value in collected:
+        days = Decimal(get_range_days_count(year=year, month=month, week_number=week_number))
+        weighted_total += value * days
+        total_days += days
+
+    if total_days == Decimal("0"):
+        return None
+    return weighted_total / total_days

@@ -16,7 +16,10 @@ from core.domain.models import (
     ActionPlanHistoryEvent,
     Area,
     Indicator,
+    IndicatorMonthTarget,
+    IndicatorUnit,
     IndicatorValue,
+    NotFoundError,
     NewActionPlan,
     NewIndicator,
     User,
@@ -143,10 +146,49 @@ class SupabaseIndicatorRepository(IndicatorRepositoryPort):
             Area(
                 id=str(row["id"]),
                 name=str(row["name"]),
+                hex_color=str(row["hex_color"]) if row.get("hex_color") else None,
                 is_active=bool(row.get("is_active", True)),
             )
             for row in rows
         ]
+
+    def list_units(self) -> list[IndicatorUnit]:
+        response = (
+            self.client.table("indicator_units")
+            .select("*")
+            .eq("is_active", True)
+            .order("label")
+            .execute()
+        )
+        rows = response.data or []
+        return [
+            IndicatorUnit(
+                id=str(row["id"]),
+                code=str(row["code"]),
+                label=str(row["label"]),
+                is_active=bool(row.get("is_active", True)),
+            )
+            for row in rows
+        ]
+
+    def get_unit_by_id(self, unit_id: str) -> IndicatorUnit | None:
+        response = (
+            self.client.table("indicator_units")
+            .select("*")
+            .eq("id", unit_id)
+            .limit(1)
+            .execute()
+        )
+        rows = response.data or []
+        if not rows:
+            return None
+        row = rows[0]
+        return IndicatorUnit(
+            id=str(row["id"]),
+            code=str(row["code"]),
+            label=str(row["label"]),
+            is_active=bool(row.get("is_active", True)),
+        )
 
     def list_active(self, area_id: str | None = None) -> list[Indicator]:
         query = self.client.table("indicators").select("*").eq("is_active", True)
@@ -155,9 +197,14 @@ class SupabaseIndicatorRepository(IndicatorRepositoryPort):
         response = query.order("name").execute()
         rows = response.data or []
 
-        area_map = {area.id: area.name for area in self.list_areas()}
+        area_map = {area.id: area for area in self.list_areas()}
+        unit_map = {unit.id: unit for unit in self.list_units()}
         return [
-            self._to_indicator(row=row, area_name=area_map.get(str(row["area_id"])))
+            self._to_indicator(
+                row=row,
+                area=area_map.get(str(row["area_id"])),
+                unit=unit_map.get(str(row["unit_id"])) if row.get("unit_id") else None,
+            )
             for row in rows
         ]
 
@@ -173,9 +220,14 @@ class SupabaseIndicatorRepository(IndicatorRepositoryPort):
         if not rows:
             return None
 
-        area_map = {area.id: area.name for area in self.list_areas()}
+        area_map = {area.id: area for area in self.list_areas()}
+        unit_map = {unit.id: unit for unit in self.list_units()}
         row = rows[0]
-        return self._to_indicator(row=row, area_name=area_map.get(str(row["area_id"])))
+        return self._to_indicator(
+            row=row,
+            area=area_map.get(str(row["area_id"])),
+            unit=unit_map.get(str(row["unit_id"])) if row.get("unit_id") else None,
+        )
 
     def list_weekly_values(
         self,
@@ -252,37 +304,176 @@ class SupabaseIndicatorRepository(IndicatorRepositoryPort):
         ).execute()
 
     def create_indicator(self, indicator: NewIndicator) -> Indicator:
+        unit = self.get_unit_by_id(indicator.unit_id)
         payload = {
             "area_id": indicator.area_id,
             "name": indicator.name,
             "description": indicator.description,
             "aggregation_type": indicator.aggregation_type,
-            "unit": indicator.unit,
-            "target_value": (
-                str(indicator.target_value)
-                if indicator.target_value is not None
-                else None
-            ),
+            "unit_id": indicator.unit_id,
+            "unit": unit.label if unit is not None else None,
             "created_by": indicator.created_by,
             "is_active": True,
         }
         response = self.client.table("indicators").insert(payload).execute()
         rows = response.data or []
         row = rows[0]
-        area_map = {area.id: area.name for area in self.list_areas()}
-        return self._to_indicator(row=row, area_name=area_map.get(str(row["area_id"])))
+        area_map = {area.id: area for area in self.list_areas()}
+        return self._to_indicator(
+            row=row,
+            area=area_map.get(str(row["area_id"])),
+            unit=unit,
+        )
+
+    def update_indicator(self, indicator_id: str, indicator: NewIndicator) -> Indicator:
+        unit = self.get_unit_by_id(indicator.unit_id)
+        payload = {
+            "area_id": indicator.area_id,
+            "name": indicator.name,
+            "description": indicator.description,
+            "aggregation_type": indicator.aggregation_type,
+            "unit_id": indicator.unit_id,
+            "unit": unit.label if unit is not None else None,
+        }
+        response = self.client.table("indicators").update(payload).eq("id", indicator_id).execute()
+        rows = response.data or []
+        if not rows:
+            refreshed = self.get_by_id(indicator_id)
+            if refreshed is None:
+                raise NotFoundError("Indicador nao encontrado para atualizacao.")
+            return refreshed
+
+        row = rows[0]
+        area_map = {area.id: area for area in self.list_areas()}
+        return self._to_indicator(
+            row=row,
+            area=area_map.get(str(row["area_id"])),
+            unit=unit,
+        )
+
+    def exists_active_name(
+        self,
+        name: str,
+        exclude_indicator_id: str | None = None,
+    ) -> bool:
+        query = self.client.table("indicators").select("id").eq("is_active", True).eq("name", name)
+        if exclude_indicator_id:
+            query = query.neq("id", exclude_indicator_id)
+        response = query.limit(1).execute()
+        rows = response.data or []
+        return bool(rows)
+
+    def delete_indicator_with_history(self, indicator_id: str) -> None:
+        action_plans_response = (
+            self.client.table("action_plans")
+            .select("id")
+            .eq("indicator_id", indicator_id)
+            .execute()
+        )
+        action_plan_rows = action_plans_response.data or []
+        action_plan_ids = [str(row["id"]) for row in action_plan_rows if row.get("id")]
+
+        if action_plan_ids:
+            self.client.table("action_plan_history").delete().in_("action_plan_id", action_plan_ids).execute()
+
+        self.client.table("action_plans").delete().eq("indicator_id", indicator_id).execute()
+        self.client.table("indicator_month_targets").delete().eq("indicator_id", indicator_id).execute()
+        self.client.table("indicator_value_history").delete().eq("indicator_id", indicator_id).execute()
+        self.client.table("indicator_values").delete().eq("indicator_id", indicator_id).execute()
+        self.client.table("indicators").delete().eq("id", indicator_id).execute()
+
+    def list_month_targets(self, indicator_ids: list[str], year: int) -> list[IndicatorMonthTarget]:
+        if not indicator_ids:
+            return []
+        response = (
+            self.client.table("indicator_month_targets")
+            .select("*")
+            .in_("indicator_id", indicator_ids)
+            .eq("year", year)
+            .execute()
+        )
+        rows = response.data or []
+        return [
+            IndicatorMonthTarget(
+                indicator_id=str(row["indicator_id"]),
+                year=int(row["year"]),
+                month=int(row["month"]),
+                target_value=Decimal(str(row["target_value"])),
+                created_by=str(row["created_by"]) if row.get("created_by") else None,
+                updated_by=str(row["updated_by"]) if row.get("updated_by") else None,
+            )
+            for row in rows
+        ]
+
+    def upsert_month_target(
+        self,
+        indicator_id: str,
+        year: int,
+        month: int,
+        target_value: Decimal,
+        user_id: str,
+    ) -> IndicatorMonthTarget:
+        existing_response = (
+            self.client.table("indicator_month_targets")
+            .select("*")
+            .eq("indicator_id", indicator_id)
+            .eq("year", year)
+            .eq("month", month)
+            .limit(1)
+            .execute()
+        )
+        existing_rows = existing_response.data or []
+
+        if existing_rows:
+            payload = {
+                "target_value": str(target_value),
+                "updated_by": user_id,
+            }
+            response = (
+                self.client.table("indicator_month_targets")
+                .update(payload)
+                .eq("indicator_id", indicator_id)
+                .eq("year", year)
+                .eq("month", month)
+                .execute()
+            )
+        else:
+            payload = {
+                "indicator_id": indicator_id,
+                "year": year,
+                "month": month,
+                "target_value": str(target_value),
+                "created_by": user_id,
+                "updated_by": user_id,
+            }
+            response = self.client.table("indicator_month_targets").insert(payload).execute()
+
+        row = (response.data or [])[0]
+        return IndicatorMonthTarget(
+            indicator_id=str(row["indicator_id"]),
+            year=int(row["year"]),
+            month=int(row["month"]),
+            target_value=Decimal(str(row["target_value"])),
+            created_by=str(row["created_by"]) if row.get("created_by") else None,
+            updated_by=str(row["updated_by"]) if row.get("updated_by") else None,
+        )
 
     @staticmethod
-    def _to_indicator(row: dict[str, Any], area_name: str | None) -> Indicator:
+    def _to_indicator(
+        row: dict[str, Any],
+        area: Area | None,
+        unit: IndicatorUnit | None,
+    ) -> Indicator:
         return Indicator(
             id=str(row["id"]),
             area_id=str(row["area_id"]),
-            area_name=area_name,
+            area_name=area.name if area else None,
+            area_hex_color=area.hex_color if area else None,
             name=str(row["name"]),
             description=str(row["description"]) if row.get("description") else None,
             aggregation_type=str(row["aggregation_type"]),
-            unit=str(row["unit"]) if row.get("unit") else None,
-            target_value=_to_decimal(row.get("target_value")),
+            unit_id=str(row["unit_id"]) if row.get("unit_id") else None,
+            unit=(unit.label if unit else (str(row["unit"]) if row.get("unit") else None)),
             is_active=bool(row.get("is_active", True)),
             created_by=str(row["created_by"]) if row.get("created_by") else None,
         )
@@ -296,8 +487,9 @@ class SupabaseActionPlanRepository(ActionPlanRepositoryPort):
         payload = {
             "indicator_id": plan.indicator_id,
             "title": plan.title,
-            "problem_description": plan.problem_description,
-            "expected_action": plan.expected_action,
+            "ocorrencia": plan.ocorrencia,
+            "identificacao_causa": plan.identificacao_causa,
+            "proposta_solucao": plan.proposta_solucao,
             "bitrix_responsible_id": plan.bitrix_responsible_id,
             "responsible_name": plan.responsible_name,
             "responsible_email": plan.responsible_email,
@@ -336,8 +528,9 @@ class SupabaseActionPlanRepository(ActionPlanRepositoryPort):
             id=str(row["id"]),
             indicator_id=str(row["indicator_id"]),
             title=str(row["title"]),
-            problem_description=str(row["problem_description"]),
-            expected_action=str(row["expected_action"]),
+            ocorrencia=str(row.get("ocorrencia") or ""),
+            identificacao_causa=str(row.get("identificacao_causa") or ""),
+            proposta_solucao=str(row.get("proposta_solucao") or ""),
             bitrix_responsible_id=(
                 str(row["bitrix_responsible_id"])
                 if row.get("bitrix_responsible_id")

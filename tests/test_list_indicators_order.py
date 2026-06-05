@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from decimal import Decimal
-
 from core.domain.models import Indicator, User
 from core.use_cases.list_indicators import ListIndicators
 
@@ -18,6 +16,9 @@ class FakeIndicatorRepository:
     def list_weekly_values(self, indicator_ids: list[str], year: int, month: int | None = None) -> list:
         return []
 
+    def list_month_targets(self, indicator_ids: list[str], year: int) -> list:
+        return []
+
 
 def test_list_indicators_sorted_by_area_and_name() -> None:
     repository = FakeIndicatorRepository(
@@ -26,11 +27,12 @@ def test_list_indicators_sorted_by_area_and_name() -> None:
                 id="3",
                 area_id="area-2",
                 area_name="Comercial",
+                area_hex_color=None,
                 name="Contratos",
                 description=None,
                 aggregation_type="sum",
+                unit_id="unit-brl",
                 unit="R$",
-                target_value=None,
                 is_active=True,
                 created_by="user-1",
             ),
@@ -38,11 +40,12 @@ def test_list_indicators_sorted_by_area_and_name() -> None:
                 id="1",
                 area_id="area-1",
                 area_name="Financeiro",
+                area_hex_color=None,
                 name="EBITDA",
                 description=None,
                 aggregation_type="sum",
+                unit_id="unit-brl",
                 unit="R$",
-                target_value=Decimal("100"),
                 is_active=True,
                 created_by="user-1",
             ),
@@ -50,11 +53,12 @@ def test_list_indicators_sorted_by_area_and_name() -> None:
                 id="2",
                 area_id="area-2",
                 area_name="Comercial",
+                area_hex_color=None,
                 name="Apresentacoes",
                 description=None,
                 aggregation_type="sum",
+                unit_id="unit-un",
                 unit="Unidades",
-                target_value=None,
                 is_active=True,
                 created_by="user-1",
             ),

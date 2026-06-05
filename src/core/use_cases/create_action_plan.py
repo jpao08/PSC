@@ -19,6 +19,10 @@ from core.ports.repositories import ActionPlanRepositoryPort, IndicatorRepositor
 from core.ports.task_gateway import TaskGatewayPort
 
 
+BITRIX_TASK_CREATOR_ID = "9"
+BITRIX_TASK_OBSERVER_IDS = ["9"]
+
+
 class CreateActionPlan:
     def __init__(
         self,
@@ -35,8 +39,9 @@ class CreateActionPlan:
         user: User,
         indicator_id: str,
         title: str,
-        problem_description: str,
-        expected_action: str,
+        ocorrencia: str,
+        identificacao_causa: str,
+        proposta_solucao: str,
         bitrix_responsible_id: str,
         responsible_name: str,
         responsible_email: str | None,
@@ -51,8 +56,9 @@ class CreateActionPlan:
         ensure_can_view_indicator(user=user, indicator=indicator)
 
         clean_title = ensure_required_text(title, "titulo")
-        clean_problem = ensure_required_text(problem_description, "descricao do problema")
-        clean_expected = ensure_required_text(expected_action, "acao esperada")
+        clean_ocorrencia = ensure_required_text(ocorrencia, "ocorrencia")
+        clean_causa = ensure_required_text(identificacao_causa, "identificacao da causa")
+        clean_solucao = ensure_required_text(proposta_solucao, "proposta da solucao")
         clean_bitrix_responsible_id = ensure_required_text(
             bitrix_responsible_id,
             "responsavel do Bitrix24",
@@ -62,8 +68,9 @@ class CreateActionPlan:
         description = (
             f"Indicador: {indicator.name}\n"
             f"Area: {indicator.area_name or indicator.area_id}\n"
-            f"Problema: {clean_problem}\n"
-            f"Acao esperada: {clean_expected}\n"
+            f"Ocorrencia: {clean_ocorrencia}\n"
+            f"Identificacao da Causa: {clean_causa}\n"
+            f"Proposta da Solucao: {clean_solucao}\n"
             f"Responsavel Bitrix ID: {clean_bitrix_responsible_id}\n"
             f"Responsavel: {clean_responsible}\n"
             f"Email: {responsible_email or '-'}\n"
@@ -78,6 +85,8 @@ class CreateActionPlan:
                 description=description,
                 responsible_bitrix_user_id=clean_bitrix_responsible_id,
                 due_date=due_date,
+                creator_bitrix_user_id=BITRIX_TASK_CREATOR_ID,
+                observer_bitrix_user_ids=BITRIX_TASK_OBSERVER_IDS,
             )
             if not bitrix_task_id:
                 status = "bitrix_pending"
@@ -88,8 +97,9 @@ class CreateActionPlan:
             NewActionPlan(
                 indicator_id=indicator_id,
                 title=clean_title,
-                problem_description=clean_problem,
-                expected_action=clean_expected,
+                ocorrencia=clean_ocorrencia,
+                identificacao_causa=clean_causa,
+                proposta_solucao=clean_solucao,
                 bitrix_responsible_id=clean_bitrix_responsible_id,
                 responsible_name=clean_responsible,
                 responsible_email=responsible_email,

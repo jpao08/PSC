@@ -20,9 +20,12 @@ from core.ports.task_gateway import TaskGatewayPort
 from core.use_cases.authenticate_user import AuthenticateUser
 from core.use_cases.create_action_plan import CreateActionPlan
 from core.use_cases.create_indicator import CreateIndicator
+from core.use_cases.delete_indicator import DeleteIndicator
 from core.use_cases.list_indicators import ListIndicators
 from core.use_cases.register_indicator_value import RegisterIndicatorValue
 from core.use_cases.search_bitrix_users import SearchBitrixUsers
+from core.use_cases.update_indicator import UpdateIndicator
+from core.use_cases.upsert_indicator_month_target import UpsertIndicatorMonthTarget
 from infra.bitrix_client import BitrixClient
 from infra.config import Settings
 from infra.logging import configure_logging
@@ -45,6 +48,9 @@ class Container:
     register_indicator_value: RegisterIndicatorValue
     create_action_plan: CreateActionPlan
     create_indicator: CreateIndicator
+    update_indicator: UpdateIndicator
+    delete_indicator: DeleteIndicator
+    upsert_indicator_month_target: UpsertIndicatorMonthTarget
     search_bitrix_users: SearchBitrixUsers
 
 
@@ -100,5 +106,10 @@ def build_container() -> Container:
             task_gateway=task_gateway,
         ),
         create_indicator=CreateIndicator(indicator_repository=indicator_repository),
+        update_indicator=UpdateIndicator(indicator_repository=indicator_repository),
+        delete_indicator=DeleteIndicator(indicator_repository=indicator_repository),
+        upsert_indicator_month_target=UpsertIndicatorMonthTarget(
+            indicator_repository=indicator_repository
+        ),
         search_bitrix_users=SearchBitrixUsers(task_gateway=task_gateway),
     )

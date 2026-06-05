@@ -1,11 +1,20 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, time, timedelta, timezone
 
 from core.domain.models import BitrixUser
 from core.ports.task_gateway import TaskGatewayPort
 from adapters.output.supabase_bitrix_user_directory import SupabaseBitrixUserDirectory
 from infra.bitrix_client import BitrixClient
+
+
+BRAZIL_TZ = timezone(timedelta(hours=-3))
+
+
+def _to_bitrix_deadline(due_date: date) -> str:
+    # Keep deadline aligned with the selected calendar day in Brazil timezone.
+    due_at = datetime.combine(due_date, time(hour=18, minute=0, second=0, microsecond=0))
+    return due_at.replace(tzinfo=BRAZIL_TZ).isoformat(timespec="seconds")
 
 
 class BitrixTaskGateway(TaskGatewayPort):
@@ -52,6 +61,8 @@ class BitrixTaskGateway(TaskGatewayPort):
         description: str,
         responsible_bitrix_user_id: str | None,
         due_date: date | None,
+        creator_bitrix_user_id: str | None = None,
+        observer_bitrix_user_ids: list[str] | None = None,
     ) -> str | None:
         fields = {
             "TITLE": title,
@@ -60,5 +71,9 @@ class BitrixTaskGateway(TaskGatewayPort):
         if responsible_bitrix_user_id:
             fields["RESPONSIBLE_ID"] = responsible_bitrix_user_id
         if due_date is not None:
-            fields["DEADLINE"] = due_date.isoformat()
+            fields["DEADLINE"] = _to_bitrix_deadline(due_date)
+        if creator_bitrix_user_id:
+            fields["CREATED_BY"] = creator_bitrix_user_id
+        if observer_bitrix_user_ids:
+            fields["AUDITORS"] = observer_bitrix_user_ids
         return self.bitrix_client.create_task(fields)

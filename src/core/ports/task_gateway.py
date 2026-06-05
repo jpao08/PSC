@@ -16,5 +16,7 @@ class TaskGatewayPort(Protocol):
         description: str,
         responsible_bitrix_user_id: str | None,
         due_date: date | None,
+        creator_bitrix_user_id: str | None = None,
+        observer_bitrix_user_ids: list[str] | None = None,
     ) -> str | None:
         ...

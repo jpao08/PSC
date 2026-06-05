@@ -6,11 +6,13 @@ const state = {
   selectedMonth: null,
   year: new Date().getFullYear(),
   areas: [],
+  units: [],
   selectedBitrixUser: null,
   bitrixUserSearchTimer: null,
   bitrixUserSearchSequence: 0,
   executiveIndicatorFilter: "",
   executiveAreaFilter: "",
+  executiveIndicatorActionMode: "none",
 };
 
 const monthsLabels = [
@@ -38,6 +40,14 @@ const actionPlanSelectedUser = document.getElementById("ap-selected-user");
 const executiveFilters = document.getElementById("executive-filters");
 const executiveIndicatorFilterInput = document.getElementById("exec-indicator-filter");
 const executiveAreaFilterSelect = document.getElementById("exec-area-filter");
+const executiveIndicatorActions = document.getElementById("executive-indicator-actions");
+const execAddIndicatorBtn = document.getElementById("exec-add-indicator-btn");
+const execEditIndicatorsBtn = document.getElementById("exec-edit-indicators-btn");
+const execDeleteIndicatorsBtn = document.getElementById("exec-delete-indicators-btn");
+const execIndicatorModeHint = document.getElementById("exec-indicator-mode-hint");
+const createIndicatorTitle = document.getElementById("create-indicator-title");
+const createIndicatorSubmit = document.getElementById("ci-submit");
+const createIndicatorId = document.getElementById("ci-indicator-id");
 
 function setStatus(message, level = "") {
   statusBox.textContent = message || "";
@@ -49,6 +59,50 @@ function formatNumber(value) {
     return "-";
   }
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value);
+}
+
+function formatIndicatorDisplayName(row) {
+  const unit = row && row.unit ? String(row.unit).trim() : "";
+  if (!unit) {
+    return row.indicator_name;
+  }
+  return `${row.indicator_name} [${unit}]`;
+}
+
+function hexToRgba(hex, alpha = 1) {
+  if (!hex || typeof hex !== "string") {
+    return null;
+  }
+  const normalized = hex.trim();
+  if (!/^#[0-9A-Fa-f]{6}$/.test(normalized)) {
+    return null;
+  }
+  const r = parseInt(normalized.slice(1, 3), 16);
+  const g = parseInt(normalized.slice(3, 5), 16);
+  const b = parseInt(normalized.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function buildMonthCellContent(monthItem) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "month-cell";
+
+  const valueNode = document.createElement("div");
+  valueNode.className = "month-value";
+  valueNode.textContent = formatNumber(monthItem ? monthItem.value : null);
+  if (monthItem && monthItem.below_target) {
+    valueNode.classList.add("below-target");
+  }
+  wrapper.appendChild(valueNode);
+
+  if (monthItem && monthItem.monthly_target !== null && monthItem.monthly_target !== undefined) {
+    const targetNode = document.createElement("div");
+    targetNode.className = "month-target";
+    targetNode.textContent = `Meta: ${formatNumber(monthItem.monthly_target)}`;
+    wrapper.appendChild(targetNode);
+  }
+
+  return wrapper;
 }
 
 async function api(path, options = {}) {
@@ -85,19 +139,20 @@ function applyLoggedInView() {
   userName.textContent = state.user.name;
   userRole.textContent = `(${state.user.role})`;
 
-  const newIndicatorBtn = document.getElementById("new-indicator-btn");
   const shutdownBtn = document.getElementById("shutdown-btn");
   shutdownBtn.classList.remove("hidden");
   if (state.user.role === "executivo") {
-    newIndicatorBtn.classList.remove("hidden");
     executiveFilters.classList.remove("hidden");
+    executiveIndicatorActions.classList.remove("hidden");
     executiveIndicatorFilterInput.value = state.executiveIndicatorFilter;
     executiveAreaFilterSelect.value = state.executiveAreaFilter;
+    setExecutiveIndicatorActionMode(state.executiveIndicatorActionMode || "none");
   } else {
-    newIndicatorBtn.classList.add("hidden");
     executiveFilters.classList.add("hidden");
+    executiveIndicatorActions.classList.add("hidden");
     state.executiveIndicatorFilter = "";
     state.executiveAreaFilter = "";
+    state.executiveIndicatorActionMode = "none";
     executiveIndicatorFilterInput.value = "";
     executiveAreaFilterSelect.value = "";
   }
@@ -110,6 +165,7 @@ function applyLoggedOutView() {
   actionPlanPanel.classList.add("hidden");
   createIndicatorPanel.classList.add("hidden");
   executiveFilters.classList.add("hidden");
+  executiveIndicatorActions.classList.add("hidden");
 }
 
 async function bootstrap() {
@@ -211,6 +267,38 @@ function getFilteredIndicators() {
   });
 }
 
+function setExecutiveIndicatorActionMode(mode) {
+  if (!state.user || state.user.role !== "executivo") {
+    state.executiveIndicatorActionMode = "none";
+    return;
+  }
+
+  state.executiveIndicatorActionMode = mode;
+
+  execEditIndicatorsBtn.classList.toggle("mode-active", mode === "edit");
+  execDeleteIndicatorsBtn.classList.toggle("mode-active", mode === "delete");
+
+  if (mode === "edit") {
+    execIndicatorModeHint.textContent = "Modo edicao ativo: clique no nome do indicador na tabela.";
+  } else if (mode === "delete") {
+    execIndicatorModeHint.textContent = "Modo exclusao ativo: clique no nome do indicador na tabela.";
+  } else {
+    execIndicatorModeHint.textContent = "Clique no nome do indicador para criar plano de acao.";
+  }
+}
+
+async function handleExecutiveIndicatorClick(row) {
+  if (state.executiveIndicatorActionMode === "edit") {
+    await openCreateIndicatorPanel(row);
+    return;
+  }
+  if (state.executiveIndicatorActionMode === "delete") {
+    await deleteIndicator(row);
+    return;
+  }
+  showActionPlanForm(row);
+}
+
 function renderIndicators() {
   const isExecutive = state.user && state.user.role === "executivo";
   const visibleIndicators = getFilteredIndicators();
@@ -240,13 +328,35 @@ function renderIndicators() {
   const tbody = document.createElement("tbody");
   visibleIndicators.forEach((row) => {
     const tr = document.createElement("tr");
+    const areaTint = hexToRgba(row.area_hex_color, 0.17);
+    if (areaTint) {
+      tr.style.backgroundColor = areaTint;
+    }
 
     const indicatorCell = document.createElement("td");
-    indicatorCell.textContent = row.indicator_name;
     if (isExecutive) {
-      indicatorCell.classList.add("clickable");
-      indicatorCell.title = "Clique para criar plano de acao";
-      indicatorCell.addEventListener("click", () => showActionPlanForm(row));
+      const indicatorButton = document.createElement("button");
+      indicatorButton.type = "button";
+      indicatorButton.className = "indicator-link";
+      indicatorButton.textContent = formatIndicatorDisplayName(row);
+      if (state.executiveIndicatorActionMode === "edit") {
+        indicatorButton.title = "Clique para editar este indicador";
+      } else if (state.executiveIndicatorActionMode === "delete") {
+        indicatorButton.title = "Clique para apagar este indicador e todo o historico";
+      } else {
+        indicatorButton.title = "Clique para criar plano de acao";
+      }
+      indicatorButton.addEventListener("click", async (event) => {
+        event.stopPropagation();
+        try {
+          await handleExecutiveIndicatorClick(row);
+        } catch (error) {
+          setStatus(error.message, "error");
+        }
+      });
+      indicatorCell.appendChild(indicatorButton);
+    } else {
+      indicatorCell.textContent = formatIndicatorDisplayName(row);
     }
     tr.appendChild(indicatorCell);
 
@@ -259,16 +369,25 @@ function renderIndicators() {
     for (let month = 1; month <= 12; month += 1) {
       const monthCell = document.createElement("td");
       const monthItem = row.months.find((item) => item.month === month);
-      monthCell.textContent = formatNumber(monthItem ? monthItem.value : null);
+      monthCell.appendChild(buildMonthCellContent(monthItem));
 
-      if (!isExecutive) {
+      if (isExecutive) {
         monthCell.classList.add("clickable");
-        monthCell.title = "Clique para editar semanas";
+        monthCell.title = "Clique para cadastrar ou atualizar a meta mensal";
+        monthCell.addEventListener("click", async () => {
+          try {
+            await editMonthlyTarget(row, month);
+          } catch (error) {
+            setStatus(error.message, "error");
+          }
+        });
+      } else {
+        monthCell.classList.add("clickable");
+        monthCell.title = "Clique para editar faixas do mes";
         monthCell.addEventListener("click", () => showWeeklyPanel(row, month));
       }
       tr.appendChild(monthCell);
     }
-
     tbody.appendChild(tr);
   });
 
@@ -285,6 +404,52 @@ function renderIndicators() {
   indicatorsTable.innerHTML = "";
   indicatorsTable.appendChild(thead);
   indicatorsTable.appendChild(tbody);
+}
+
+async function editMonthlyTarget(row, month) {
+  const monthName = monthsLabels[month - 1];
+  const monthItem = row.months.find((item) => item.month === month);
+  const currentTarget = monthItem && monthItem.monthly_target !== null && monthItem.monthly_target !== undefined
+    ? String(monthItem.monthly_target)
+    : "";
+
+  const typedValue = window.prompt(
+    `Informe a meta mensal para ${formatIndicatorDisplayName(row)} em ${monthName}/${state.year}:`,
+    currentTarget,
+  );
+  if (typedValue === null) {
+    return;
+  }
+
+  const normalizedValue = typedValue.trim().replace(",", ".");
+  if (!normalizedValue) {
+    throw new Error("Informe um valor numerico para a meta mensal.");
+  }
+
+  await api(`/api/indicators/${row.indicator_id}/monthly-target`, {
+    method: "POST",
+    body: JSON.stringify({
+      year: state.year,
+      month,
+      target_value: normalizedValue,
+    }),
+  });
+
+  await loadIndicators();
+  setStatus(`Meta mensal salva para ${monthName}/${state.year}.`, "success");
+}
+
+async function deleteIndicator(row) {
+  const confirmed = window.confirm(
+    `Deseja apagar o indicador \"${formatIndicatorDisplayName(row)}\"? Esta acao exclui o indicador e todo o historico dele.`,
+  );
+  if (!confirmed) {
+    return;
+  }
+
+  await api(`/api/indicators/${row.indicator_id}`, { method: "DELETE" });
+  await loadIndicators();
+  setStatus("Indicador apagado com sucesso.", "success");
 }
 
 function clearBitrixResponsibleSelection() {
@@ -364,12 +529,12 @@ async function showWeeklyPanel(row, month) {
 
   weeklyPanel.classList.remove("hidden");
   actionPlanPanel.classList.add("hidden");
-  weeklyTitle.textContent = `${row.indicator_name} - ${monthsLabels[month - 1]} / ${state.year}`;
+  weeklyTitle.textContent = `${formatIndicatorDisplayName(row)} - ${monthsLabels[month - 1]} / ${state.year}`;
 
   weeklyForm.innerHTML = "";
   response.weeks.forEach((weekItem) => {
     const label = document.createElement("label");
-    label.textContent = `Semana ${weekItem.week_number}`;
+    label.textContent = weekItem.label || `Faixa ${weekItem.week_number}`;
 
     const input = document.createElement("input");
     input.type = "number";
@@ -383,7 +548,7 @@ async function showWeeklyPanel(row, month) {
 
   const saveButton = document.createElement("button");
   saveButton.type = "button";
-  saveButton.textContent = "Salvar semanas preenchidas";
+  saveButton.textContent = "Salvar faixas preenchidas";
   saveButton.addEventListener("click", saveWeeklyValues);
   weeklyForm.appendChild(saveButton);
 }
@@ -410,7 +575,7 @@ async function saveWeeklyValues() {
   }
 
   await loadIndicators();
-  setStatus(`${sentCount} valor(es) semanal(is) salvos.`, "success");
+  setStatus(`${sentCount} valor(es) de faixa salvos.`, "success");
 }
 
 function showActionPlanForm(row) {
@@ -421,7 +586,7 @@ function showActionPlanForm(row) {
   clearBitrixResponsibleSelection();
   hideBitrixSuggestions();
   document.getElementById("ap-indicator-id").value = row.indicator_id;
-  actionPlanIndicator.textContent = `${row.indicator_name} (${row.area_name || row.area_id})`;
+  actionPlanIndicator.textContent = `${formatIndicatorDisplayName(row)} (${row.area_name || row.area_id})`;
 }
 
 async function submitActionPlan(event) {
@@ -433,8 +598,9 @@ async function submitActionPlan(event) {
   const payload = {
     indicator_id: document.getElementById("ap-indicator-id").value,
     title: document.getElementById("ap-title").value,
-    problem_description: document.getElementById("ap-problem").value,
-    expected_action: document.getElementById("ap-expected").value,
+    ocorrencia: document.getElementById("ap-ocorrencia").value,
+    identificacao_causa: document.getElementById("ap-causa").value,
+    proposta_solucao: document.getElementById("ap-solucao").value,
     bitrix_responsible_id: actionPlanResponsibleId.value,
     responsible_name: state.selectedBitrixUser.name,
     responsible_email: state.selectedBitrixUser.email || null,
@@ -457,13 +623,16 @@ async function submitActionPlan(event) {
   hideBitrixSuggestions();
 }
 
-async function openCreateIndicatorPanel() {
+async function openCreateIndicatorPanel(indicatorRow = null) {
   createIndicatorPanel.classList.remove("hidden");
   actionPlanPanel.classList.add("hidden");
   weeklyPanel.classList.add("hidden");
 
   if (state.areas.length === 0) {
     state.areas = await api("/api/areas");
+  }
+  if (state.units.length === 0) {
+    state.units = await api("/api/indicator-units");
   }
 
   const areaSelect = document.getElementById("ci-area");
@@ -474,37 +643,79 @@ async function openCreateIndicatorPanel() {
     option.textContent = area.name;
     areaSelect.appendChild(option);
   });
+
+  const unitSelect = document.getElementById("ci-unit-id");
+  unitSelect.innerHTML = "";
+  state.units.forEach((unit) => {
+    const option = document.createElement("option");
+    option.value = unit.id;
+    option.textContent = unit.label;
+    unitSelect.appendChild(option);
+  });
+
+  if (indicatorRow) {
+    createIndicatorTitle.textContent = "Editar indicador";
+    createIndicatorSubmit.textContent = "Salvar alteracoes";
+    createIndicatorId.value = indicatorRow.indicator_id;
+    areaSelect.value = indicatorRow.area_id;
+    document.getElementById("ci-name").value = indicatorRow.indicator_name || "";
+    document.getElementById("ci-description").value = indicatorRow.description || "";
+    document.getElementById("ci-aggregation").value = indicatorRow.aggregation_type || "sum";
+    if (indicatorRow.unit_id) {
+      unitSelect.value = indicatorRow.unit_id;
+    }
+  } else {
+    createIndicatorTitle.textContent = "Cadastrar indicador";
+    createIndicatorSubmit.textContent = "Salvar indicador";
+    document.getElementById("create-indicator-form").reset();
+    createIndicatorId.value = "";
+  }
 }
 
 async function submitCreateIndicator(event) {
   event.preventDefault();
 
+  const editingIndicatorId = createIndicatorId.value || "";
   const payload = {
     area_id: document.getElementById("ci-area").value,
     name: document.getElementById("ci-name").value,
     description: document.getElementById("ci-description").value || null,
     aggregation_type: document.getElementById("ci-aggregation").value,
-    unit: document.getElementById("ci-unit").value || null,
-    target_value: document.getElementById("ci-target").value || null,
+    unit_id: document.getElementById("ci-unit-id").value,
   };
 
-  await api("/api/indicators", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  if (editingIndicatorId) {
+    await api(`/api/indicators/${editingIndicatorId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  } else {
+    await api("/api/indicators", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
 
   createIndicatorPanel.classList.add("hidden");
   event.target.reset();
+  createIndicatorId.value = "";
   await loadIndicators();
-  setStatus("Indicador cadastrado com sucesso.", "success");
+  setStatus(
+    editingIndicatorId
+      ? "Indicador atualizado com sucesso."
+      : "Indicador cadastrado com sucesso.",
+    "success",
+  );
 }
 
 function logout(showMessage = true) {
   state.token = "";
   state.user = null;
   state.indicators = [];
+  state.units = [];
   state.executiveIndicatorFilter = "";
   state.executiveAreaFilter = "";
+  state.executiveIndicatorActionMode = "none";
   localStorage.removeItem("psc_token");
   applyLoggedOutView();
   indicatorsTable.innerHTML = "";
@@ -634,16 +845,31 @@ document.getElementById("action-plan-form").addEventListener("submit", async (ev
   }
 });
 
-document.getElementById("new-indicator-btn").addEventListener("click", async () => {
+execAddIndicatorBtn.addEventListener("click", async () => {
   try {
+    setExecutiveIndicatorActionMode("none");
     await openCreateIndicatorPanel();
   } catch (error) {
     setStatus(error.message, "error");
   }
 });
 
+execEditIndicatorsBtn.addEventListener("click", () => {
+  const nextMode = state.executiveIndicatorActionMode === "edit" ? "none" : "edit";
+  setExecutiveIndicatorActionMode(nextMode);
+});
+
+execDeleteIndicatorsBtn.addEventListener("click", () => {
+  const nextMode = state.executiveIndicatorActionMode === "delete" ? "none" : "delete";
+  setExecutiveIndicatorActionMode(nextMode);
+});
+
 document.getElementById("ci-cancel").addEventListener("click", () => {
   createIndicatorPanel.classList.add("hidden");
+  document.getElementById("create-indicator-form").reset();
+  createIndicatorId.value = "";
+  createIndicatorTitle.textContent = "Cadastrar indicador";
+  createIndicatorSubmit.textContent = "Salvar indicador";
 });
 
 document.getElementById("create-indicator-form").addEventListener("submit", async (event) => {

@@ -12,9 +12,11 @@ from core.domain.models import (
     AuthorizationError,
     BitrixUser,
     Indicator,
+    IndicatorUnit,
     NewActionPlan,
     NewIndicator,
     User,
+    ValidationError,
 )
 from core.use_cases.create_action_plan import CreateActionPlan
 from core.use_cases.create_indicator import CreateIndicator
@@ -35,10 +37,13 @@ def build_user(role: str, area_id: str | None = None) -> User:
 
 
 class FakeIndicatorRepository:
-    def __init__(self, indicator: Indicator) -> None:
+    def __init__(self, indicator: Indicator, existing_names: set[str] | None = None) -> None:
         self.indicator = indicator
         self.saved_values: list[dict[str, object]] = []
         self.created_indicators: list[NewIndicator] = []
+        self.updated_indicators: list[tuple[str, NewIndicator]] = []
+        self.deleted_indicators: list[str] = []
+        self.existing_names = existing_names or set()
 
     def list_active(self, area_id: str | None = None) -> list[Indicator]:
         return [self.indicator]
@@ -67,6 +72,7 @@ class FakeIndicatorRepository:
 
     def create_indicator(self, indicator: NewIndicator) -> Indicator:
         self.created_indicators.append(indicator)
+        self.existing_names.add(indicator.name)
         return replace(
             self.indicator,
             id="new-indicator-id",
@@ -74,10 +80,58 @@ class FakeIndicatorRepository:
             name=indicator.name,
             description=indicator.description,
             aggregation_type=indicator.aggregation_type,
-            unit=indicator.unit,
-            target_value=indicator.target_value,
+            unit_id=indicator.unit_id,
+            unit="%",
             created_by=indicator.created_by,
         )
+
+    def update_indicator(self, indicator_id: str, indicator: NewIndicator) -> Indicator:
+        self.updated_indicators.append((indicator_id, indicator))
+        self.existing_names.add(indicator.name)
+        return replace(
+            self.indicator,
+            id=indicator_id,
+            area_id=indicator.area_id,
+            name=indicator.name,
+            description=indicator.description,
+            aggregation_type=indicator.aggregation_type,
+            unit_id=indicator.unit_id,
+            unit="%",
+            created_by=indicator.created_by,
+        )
+
+    def list_month_targets(self, indicator_ids: list[str], year: int) -> list:
+        return []
+
+    def delete_indicator_with_history(self, indicator_id: str) -> None:
+        self.deleted_indicators.append(indicator_id)
+
+    def exists_active_name(
+        self,
+        name: str,
+        exclude_indicator_id: str | None = None,
+    ) -> bool:
+        if exclude_indicator_id and self.indicator.id == exclude_indicator_id:
+            return name in {item for item in self.existing_names if item != self.indicator.name}
+        return name in self.existing_names
+
+    def list_units(self) -> list[IndicatorUnit]:
+        return [IndicatorUnit(id="unit-percent", code="PERCENT", label="%")]
+
+    def get_unit_by_id(self, unit_id: str) -> IndicatorUnit | None:
+        if unit_id == "unit-percent":
+            return IndicatorUnit(id="unit-percent", code="PERCENT", label="%")
+        return None
+
+    def upsert_month_target(
+        self,
+        indicator_id: str,
+        year: int,
+        month: int,
+        target_value: Decimal,
+        user_id: str,
+    ):  # noqa: ANN201
+        raise NotImplementedError
 
     def list_areas(self) -> list:
         return []
@@ -93,8 +147,9 @@ class FakeActionPlanRepository:
             id="plan-1",
             indicator_id=plan.indicator_id,
             title=plan.title,
-            problem_description=plan.problem_description,
-            expected_action=plan.expected_action,
+            ocorrencia=plan.ocorrencia,
+            identificacao_causa=plan.identificacao_causa,
+            proposta_solucao=plan.proposta_solucao,
             bitrix_responsible_id=plan.bitrix_responsible_id,
             responsible_name=plan.responsible_name,
             responsible_email=plan.responsible_email,
@@ -130,6 +185,8 @@ class FakeTaskGateway:
         description: str,
         responsible_bitrix_user_id: str | None,
         due_date: date | None,
+        creator_bitrix_user_id: str | None = None,
+        observer_bitrix_user_ids: list[str] | None = None,
     ) -> str | None:
         self.called = True
         self.last_responsible_id = responsible_bitrix_user_id
@@ -141,11 +198,12 @@ def test_manager_area_authorization_for_weekly_update() -> None:
         id="ind-1",
         area_id="area-A",
         area_name="Area A",
+        area_hex_color=None,
         name="Receita",
         description=None,
         aggregation_type="sum",
+        unit_id="unit-brl",
         unit="R$",
-        target_value=None,
         is_active=True,
         created_by="user-1",
     )
@@ -169,11 +227,12 @@ def test_create_action_plan_calls_bitrix_gateway() -> None:
         id="ind-1",
         area_id="area-A",
         area_name="Area A",
+        area_hex_color=None,
         name="Qualidade",
         description=None,
         aggregation_type="avg",
+        unit_id="unit-pts",
         unit="pts",
-        target_value=None,
         is_active=True,
         created_by="user-1",
     )
@@ -192,8 +251,9 @@ def test_create_action_plan_calls_bitrix_gateway() -> None:
         user=executive,
         indicator_id="ind-1",
         title="Plano de melhoria",
-        problem_description="Indicador abaixo da meta",
-        expected_action="Aumentar acompanhamento semanal",
+        ocorrencia="Perda de eficiencia no processo",
+        identificacao_causa="Falta de rotina padronizada",
+        proposta_solucao="Definir checklist semanal",
         bitrix_responsible_id="42",
         responsible_name="Maria",
         responsible_email="maria@empresa.com",
@@ -212,11 +272,12 @@ def test_create_indicator_only_executive() -> None:
         id="ind-1",
         area_id="area-A",
         area_name="Area A",
+        area_hex_color=None,
         name="Produtividade",
         description=None,
         aggregation_type="sum",
+        unit_id="unit-percent",
         unit="un",
-        target_value=None,
         is_active=True,
         created_by="user-1",
     )
@@ -232,8 +293,36 @@ def test_create_indicator_only_executive() -> None:
             name="Novo indicador",
             description="",
             aggregation_type="sum",
-            unit="%",
-            target_value=Decimal("95"),
+            unit_id="unit-percent",
+        )
+
+
+def test_create_indicator_rejects_duplicate_name() -> None:
+    indicator = Indicator(
+        id="ind-1",
+        area_id="area-A",
+        area_name="Area A",
+        area_hex_color=None,
+        name="Produtividade",
+        description=None,
+        aggregation_type="sum",
+        unit_id="unit-percent",
+        unit="un",
+        is_active=True,
+        created_by="user-1",
+    )
+    repository = FakeIndicatorRepository(indicator=indicator, existing_names={"Receita Total"})
+    use_case = CreateIndicator(indicator_repository=repository)
+    executive = build_user(role="executivo")
+
+    with pytest.raises(ValidationError):
+        use_case.execute(
+            user=executive,
+            area_id="area-A",
+            name="Receita Total",
+            description="",
+            aggregation_type="sum",
+            unit_id="unit-percent",
         )
 
 

@@ -40,7 +40,6 @@
               <input id="year-input" type="number" min="2000" max="2100" />
             </label>
             <button id="reload-btn" type="button">Recarregar</button>
-            <button id="new-indicator-btn" type="button" class="hidden">Novo indicador</button>
             <button id="shutdown-btn" type="button" class="danger hidden">Encerrar app</button>
             <button id="logout-btn" type="button" class="danger">Sair</button>
           </div>
@@ -64,6 +63,12 @@
               </select>
             </label>
           </div>
+          <div id="executive-indicator-actions" class="toolbar-actions hidden indicator-admin-actions">
+            <button id="exec-add-indicator-btn" type="button">Adicionar Indicador</button>
+            <button id="exec-edit-indicators-btn" type="button">Editar Indicadores</button>
+            <button id="exec-delete-indicators-btn" type="button" class="danger">Apagar Indicadores</button>
+            <span id="exec-indicator-mode-hint" class="muted"></span>
+          </div>
           <div class="table-wrap">
             <table id="indicators-table"></table>
           </div>
@@ -85,12 +90,16 @@
               <input id="ap-title" required />
             </label>
             <label>
-              Descricao do problema
-              <textarea id="ap-problem" required></textarea>
+              Ocorrencia
+              <textarea id="ap-ocorrencia" required></textarea>
             </label>
             <label>
-              Acao esperada
-              <textarea id="ap-expected" required></textarea>
+              Identificacao da causa
+              <textarea id="ap-causa" required></textarea>
+            </label>
+            <label>
+              Proposta da solucao
+              <textarea id="ap-solucao" required></textarea>
             </label>
             <label>
               Responsavel (Bitrix24)
@@ -113,8 +122,9 @@
         </section>
 
         <section id="create-indicator-panel" class="card hidden">
-          <h2>Cadastrar indicador</h2>
+          <h2 id="create-indicator-title">Cadastrar indicador</h2>
           <form id="create-indicator-form" class="form-grid">
+            <input id="ci-indicator-id" type="hidden" />
             <label>
               Area
               <select id="ci-area" required></select>
@@ -136,14 +146,10 @@
             </label>
             <label>
               Unidade
-              <input id="ci-unit" />
-            </label>
-            <label>
-              Meta
-              <input id="ci-target" placeholder="Ex: 100.5" />
+              <select id="ci-unit-id" required></select>
             </label>
             <div class="toolbar-actions">
-              <button type="submit">Salvar indicador</button>
+              <button id="ci-submit" type="submit">Salvar indicador</button>
               <button id="ci-cancel" type="button">Cancelar</button>
             </div>
           </form>
