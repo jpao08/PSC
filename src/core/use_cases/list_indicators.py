@@ -25,6 +25,10 @@ class ListIndicators:
             indicator_ids=indicator_ids,
             year=year,
         )
+        projections = self.indicator_repository.list_month_projections(
+            indicator_ids=indicator_ids,
+            year=year,
+        )
 
         grouped: dict[tuple[str, int], list[tuple[int, Decimal]]] = defaultdict(list)
         for item in values:
@@ -34,10 +38,15 @@ class ListIndicators:
             (item.indicator_id, item.month): item.target_value
             for item in targets
         }
+        projection_map = {
+            (item.indicator_id, item.month): item.projected_value
+            for item in projections
+        }
 
         rows: list[IndicatorTableRow] = []
         for indicator in indicators:
             monthly_values: dict[int, Decimal | None] = {}
+            monthly_projections: dict[int, Decimal | None] = {}
             monthly_targets: dict[int, Decimal | None] = {}
             below_target: dict[int, bool] = {}
             for month in range(1, 13):
@@ -48,6 +57,7 @@ class ListIndicators:
                     month=month,
                 )
                 monthly_targets[month] = target_map.get((indicator.id, month))
+                monthly_projections[month] = projection_map.get((indicator.id, month))
                 below_target[month] = (
                     monthly_values[month] is not None
                     and monthly_targets[month] is not None
@@ -66,6 +76,7 @@ class ListIndicators:
                     unit_id=indicator.unit_id,
                     unit=indicator.unit,
                     monthly_values=monthly_values,
+                    monthly_projections=monthly_projections,
                     monthly_targets=monthly_targets,
                     below_target=below_target,
                 )

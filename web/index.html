@@ -8,7 +8,8 @@
   </head>
   <body>
     <main class="container">
-      <h1>Gestao de Indicadores</h1>
+      <!-- PSC_VERSION: sempre atualizar este marcador visual quando houver release funcional relevante. -->
+      <h1 class="page-title">Gestao de Indicadores <span class="version-badge">V1</span></h1>
       <p class="subtitle">MVP simples para gestores de area e executivos</p>
 
       <section id="status" class="status"></section>
@@ -62,6 +63,12 @@
                 <option value="">Todas as areas</option>
               </select>
             </label>
+          </div>
+          <div id="executive-area-actions" class="toolbar-actions hidden indicator-admin-actions">
+            <button id="exec-add-area-btn" type="button">Adicionar Area</button>
+            <button id="exec-edit-areas-btn" type="button">Editar Areas</button>
+            <button id="exec-delete-areas-btn" type="button" class="danger">Apagar Areas</button>
+            <span id="exec-area-mode-hint" class="muted"></span>
           </div>
           <div id="executive-indicator-actions" class="toolbar-actions hidden indicator-admin-actions">
             <button id="exec-add-indicator-btn" type="button">Adicionar Indicador</button>
@@ -154,6 +161,113 @@
             </div>
           </form>
         </section>
+      </section>
+
+      <!-- Monthly Planning Modal -->
+      <section id="monthly-planning-panel" class="card hidden modal-overlay">
+        <div class="modal-content">
+          <h2>Planejamento Mensal</h2>
+          <p id="monthly-planning-title" class="muted"></p>
+          <form id="monthly-planning-form" class="form-grid">
+            <input id="mp-indicator-id" type="hidden" />
+            <input id="mp-year" type="hidden" />
+            <input id="mp-month" type="hidden" />
+
+            <div id="mp-projected-group" class="hidden">
+              <label>
+                Valor Projetado
+                <input id="mp-projected-value" type="number" step="0.01" min="0" />
+              </label>
+            </div>
+
+            <div id="mp-target-group" class="hidden">
+              <label>
+                Meta Mensal
+                <input id="mp-target-value" type="number" step="0.01" min="0" />
+              </label>
+            </div>
+
+            <div class="toolbar-actions">
+              <button id="mp-submit" type="submit">Salvar</button>
+              <button id="mp-cancel" type="button" class="secondary">Cancelar</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- Area Management Modal -->
+      <section id="area-management-panel" class="card hidden modal-overlay">
+        <div class="modal-content">
+          <h2>Gerenciar Areas</h2>
+
+          <div class="area-management-tabs">
+            <button type="button" class="area-tab-btn active" data-tab="create">Criar Area</button>
+            <button type="button" class="area-tab-btn" data-tab="edit">Editar Area</button>
+            <button type="button" class="area-tab-btn" data-tab="delete">Apagar Area</button>
+          </div>
+
+          <!-- Create Tab -->
+          <div id="area-tab-create" class="area-tab-content">
+            <form id="area-create-form" class="form-grid">
+              <label>
+                Nome da Area
+                <input id="ac-name" type="text" required />
+              </label>
+              <label>
+                Cor da Area
+                <input id="ac-color" class="color-input" type="color" value="#1d4ed8" />
+              </label>
+              <div class="toolbar-actions">
+                <button type="submit">Criar Area</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Edit Tab -->
+          <div id="area-tab-edit" class="area-tab-content hidden">
+            <form id="area-edit-form" class="form-grid">
+              <label>
+                Selecionar Area
+                <select id="ae-area-id" required>
+                  <option value="">-- Selecione uma area --</option>
+                </select>
+              </label>
+              <label>
+                Novo Nome
+                <input id="ae-name" type="text" required />
+              </label>
+              <label>
+                Nova Cor
+                <input id="ae-color" class="color-input" type="color" value="#1d4ed8" />
+              </label>
+              <div class="toolbar-actions">
+                <button type="submit">Atualizar Area</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Delete Tab -->
+          <div id="area-tab-delete" class="area-tab-content hidden">
+            <form id="area-delete-form" class="form-grid">
+              <label>
+                Selecionar Area
+                <select id="ad-area-id" required>
+                  <option value="">-- Selecione uma area --</option>
+                </select>
+              </label>
+              <p class="muted small">
+                Atencao: a area sera desativada. Indicadores associados nao serao afetados.
+              </p>
+              <div class="toolbar-actions">
+                <button type="submit" class="danger">Apagar Area</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="toolbar-actions">
+            <button id="am-close-btn" type="button" class="secondary">Fechar</button>
+          </div>
+        </div>
       </section>
     </main>
 

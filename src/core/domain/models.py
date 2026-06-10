@@ -38,6 +38,7 @@ class User:
     area_id: str | None
     is_active: bool
     password_hash: str
+    can_edit_projected_value: bool = False
 
 
 @dataclass(frozen=True)
@@ -93,6 +94,7 @@ class IndicatorTableRow:
     unit_id: str | None
     unit: str | None
     monthly_values: dict[int, Decimal | None]
+    monthly_projections: dict[int, Decimal | None]
     monthly_targets: dict[int, Decimal | None]
     below_target: dict[int, bool]
 
@@ -103,6 +105,16 @@ class IndicatorMonthTarget:
     year: int
     month: int
     target_value: Decimal
+    created_by: str | None
+    updated_by: str | None
+
+
+@dataclass(frozen=True)
+class IndicatorMonthProjection:
+    indicator_id: str
+    year: int
+    month: int
+    projected_value: Decimal
     created_by: str | None
     updated_by: str | None
 

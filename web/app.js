@@ -15,6 +15,9 @@ const state = {
   executiveIndicatorActionMode: "none",
 };
 
+const HEX_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/;
+const DEFAULT_AREA_COLOR = "#1d4ed8";
+
 const monthsLabels = [
   "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
   "Jul", "Ago", "Set", "Out", "Nov", "Dez",
@@ -33,6 +36,7 @@ const weeklyForm = document.getElementById("weekly-form");
 const actionPlanPanel = document.getElementById("action-plan-panel");
 const actionPlanIndicator = document.getElementById("action-plan-indicator");
 const createIndicatorPanel = document.getElementById("create-indicator-panel");
+const areaManagementPanel = document.getElementById("area-management-panel");
 const actionPlanResponsibleSearch = document.getElementById("ap-responsible-search");
 const actionPlanResponsibleId = document.getElementById("ap-bitrix-user-id");
 const actionPlanSuggestions = document.getElementById("ap-user-suggestions");
@@ -40,7 +44,12 @@ const actionPlanSelectedUser = document.getElementById("ap-selected-user");
 const executiveFilters = document.getElementById("executive-filters");
 const executiveIndicatorFilterInput = document.getElementById("exec-indicator-filter");
 const executiveAreaFilterSelect = document.getElementById("exec-area-filter");
+const executiveAreaActions = document.getElementById("executive-area-actions");
 const executiveIndicatorActions = document.getElementById("executive-indicator-actions");
+const execAddAreaBtn = document.getElementById("exec-add-area-btn");
+const execEditAreasBtn = document.getElementById("exec-edit-areas-btn");
+const execDeleteAreasBtn = document.getElementById("exec-delete-areas-btn");
+const execAreaModeHint = document.getElementById("exec-area-mode-hint");
 const execAddIndicatorBtn = document.getElementById("exec-add-indicator-btn");
 const execEditIndicatorsBtn = document.getElementById("exec-edit-indicators-btn");
 const execDeleteIndicatorsBtn = document.getElementById("exec-delete-indicators-btn");
@@ -86,6 +95,13 @@ function hexToRgba(hex, alpha = 1) {
 function buildMonthCellContent(monthItem) {
   const wrapper = document.createElement("div");
   wrapper.className = "month-cell";
+
+  if (monthItem && monthItem.projected_value !== null && monthItem.projected_value !== undefined) {
+    const projectedNode = document.createElement("div");
+    projectedNode.className = "month-projected";
+    projectedNode.textContent = `Proj: ${formatNumber(monthItem.projected_value)}`;
+    wrapper.appendChild(projectedNode);
+  }
 
   const valueNode = document.createElement("div");
   valueNode.className = "month-value";
@@ -143,13 +159,18 @@ function applyLoggedInView() {
   shutdownBtn.classList.remove("hidden");
   if (state.user.role === "executivo") {
     executiveFilters.classList.remove("hidden");
+    executiveAreaActions.classList.remove("hidden");
     executiveIndicatorActions.classList.remove("hidden");
     executiveIndicatorFilterInput.value = state.executiveIndicatorFilter;
     executiveAreaFilterSelect.value = state.executiveAreaFilter;
+    execAreaModeHint.textContent = "";
     setExecutiveIndicatorActionMode(state.executiveIndicatorActionMode || "none");
   } else {
     executiveFilters.classList.add("hidden");
+    executiveAreaActions.classList.add("hidden");
     executiveIndicatorActions.classList.add("hidden");
+    createIndicatorPanel.classList.add("hidden");
+    areaManagementPanel.classList.add("hidden");
     state.executiveIndicatorFilter = "";
     state.executiveAreaFilter = "";
     state.executiveIndicatorActionMode = "none";
@@ -165,7 +186,34 @@ function applyLoggedOutView() {
   actionPlanPanel.classList.add("hidden");
   createIndicatorPanel.classList.add("hidden");
   executiveFilters.classList.add("hidden");
+  executiveAreaActions.classList.add("hidden");
   executiveIndicatorActions.classList.add("hidden");
+  areaManagementPanel.classList.add("hidden");
+  execAreaModeHint.textContent = "";
+}
+
+function canEditProjectedValue() {
+  return !!(state.user && state.user.can_edit_projected_value);
+}
+
+function validateOptionalHexColorOrThrow(value) {
+  const cleaned = (value || "").trim();
+  if (!cleaned) {
+    return null;
+  }
+  if (!HEX_COLOR_PATTERN.test(cleaned)) {
+    throw new Error("Cor invalida. Use o formato #RRGGBB.");
+  }
+  return cleaned;
+}
+
+function normalizeAreaColor(value) {
+  const cleaned = (value || "").trim();
+  return HEX_COLOR_PATTERN.test(cleaned) ? cleaned : DEFAULT_AREA_COLOR;
+}
+
+async function ensureAreasLoaded() {
+  state.areas = await api("/api/areas");
 }
 
 async function bootstrap() {
@@ -287,6 +335,8 @@ function setExecutiveIndicatorActionMode(mode) {
   }
 }
 
+
+
 async function handleExecutiveIndicatorClick(row) {
   if (state.executiveIndicatorActionMode === "edit") {
     await openCreateIndicatorPanel(row);
@@ -373,10 +423,10 @@ function renderIndicators() {
 
       if (isExecutive) {
         monthCell.classList.add("clickable");
-        monthCell.title = "Clique para cadastrar ou atualizar a meta mensal";
+        monthCell.title = "Clique para cadastrar planejamento mensal";
         monthCell.addEventListener("click", async () => {
           try {
-            await editMonthlyTarget(row, month);
+            openMonthlyPlanningModal(row, month);
           } catch (error) {
             setStatus(error.message, "error");
           }
@@ -406,38 +456,9 @@ function renderIndicators() {
   indicatorsTable.appendChild(tbody);
 }
 
-async function editMonthlyTarget(row, month) {
-  const monthName = monthsLabels[month - 1];
-  const monthItem = row.months.find((item) => item.month === month);
-  const currentTarget = monthItem && monthItem.monthly_target !== null && monthItem.monthly_target !== undefined
-    ? String(monthItem.monthly_target)
-    : "";
 
-  const typedValue = window.prompt(
-    `Informe a meta mensal para ${formatIndicatorDisplayName(row)} em ${monthName}/${state.year}:`,
-    currentTarget,
-  );
-  if (typedValue === null) {
-    return;
-  }
 
-  const normalizedValue = typedValue.trim().replace(",", ".");
-  if (!normalizedValue) {
-    throw new Error("Informe um valor numerico para a meta mensal.");
-  }
 
-  await api(`/api/indicators/${row.indicator_id}/monthly-target`, {
-    method: "POST",
-    body: JSON.stringify({
-      year: state.year,
-      month,
-      target_value: normalizedValue,
-    }),
-  });
-
-  await loadIndicators();
-  setStatus(`Meta mensal salva para ${monthName}/${state.year}.`, "success");
-}
 
 async function deleteIndicator(row) {
   const confirmed = window.confirm(
@@ -532,6 +553,9 @@ async function showWeeklyPanel(row, month) {
   weeklyTitle.textContent = `${formatIndicatorDisplayName(row)} - ${monthsLabels[month - 1]} / ${state.year}`;
 
   weeklyForm.innerHTML = "";
+  const fieldsGroup = document.createElement("div");
+  fieldsGroup.className = "week-fields";
+
   response.weeks.forEach((weekItem) => {
     const label = document.createElement("label");
     label.textContent = weekItem.label || `Faixa ${weekItem.week_number}`;
@@ -543,14 +567,28 @@ async function showWeeklyPanel(row, month) {
     input.name = `week-${weekItem.week_number}`;
     input.value = weekItem.value ?? "";
     label.appendChild(input);
-    weeklyForm.appendChild(label);
+    fieldsGroup.appendChild(label);
   });
+  weeklyForm.appendChild(fieldsGroup);
+
+  const actionsGroup = document.createElement("div");
+  actionsGroup.className = "week-actions";
 
   const saveButton = document.createElement("button");
   saveButton.type = "button";
   saveButton.textContent = "Salvar faixas preenchidas";
   saveButton.addEventListener("click", saveWeeklyValues);
-  weeklyForm.appendChild(saveButton);
+  actionsGroup.appendChild(saveButton);
+
+  if (canEditProjectedValue()) {
+    const planningButton = document.createElement("button");
+    planningButton.type = "button";
+    planningButton.className = "secondary";
+    planningButton.textContent = "Editar valor planejado";
+    planningButton.addEventListener("click", () => openMonthlyPlanningModal(row, month));
+    actionsGroup.appendChild(planningButton);
+  }
+  weeklyForm.appendChild(actionsGroup);
 }
 
 async function saveWeeklyValues() {
@@ -629,7 +667,7 @@ async function openCreateIndicatorPanel(indicatorRow = null) {
   weeklyPanel.classList.add("hidden");
 
   if (state.areas.length === 0) {
-    state.areas = await api("/api/areas");
+    await ensureAreasLoaded();
   }
   if (state.units.length === 0) {
     state.units = await api("/api/indicator-units");
@@ -864,6 +902,8 @@ execDeleteIndicatorsBtn.addEventListener("click", () => {
   setExecutiveIndicatorActionMode(nextMode);
 });
 
+
+
 document.getElementById("ci-cancel").addEventListener("click", () => {
   createIndicatorPanel.classList.add("hidden");
   document.getElementById("create-indicator-form").reset();
@@ -878,6 +918,305 @@ document.getElementById("create-indicator-form").addEventListener("submit", asyn
   } catch (error) {
     setStatus(error.message, "error");
   }
+});
+
+// === Monthly Planning Modal ===
+const monthlyPlanningPanel = document.getElementById("monthly-planning-panel");
+const monthlyPlanningForm = document.getElementById("monthly-planning-form");
+const mpIndicatorId = document.getElementById("mp-indicator-id");
+const mpYear = document.getElementById("mp-year");
+const mpMonth = document.getElementById("mp-month");
+const mpProjectedGroup = document.getElementById("mp-projected-group");
+const mpTargetGroup = document.getElementById("mp-target-group");
+const mpProjectedValue = document.getElementById("mp-projected-value");
+const mpTargetValue = document.getElementById("mp-target-value");
+const mpCancel = document.getElementById("mp-cancel");
+const monthlyPlanningTitle = document.getElementById("monthly-planning-title");
+
+function openMonthlyPlanningModal(row, month) {
+  const monthName = monthsLabels[month - 1];
+  const monthItem = row.months.find((item) => item.month === month);
+
+  mpIndicatorId.value = row.indicator_id;
+  mpYear.value = String(state.year);
+  mpMonth.value = String(month);
+
+  monthlyPlanningTitle.textContent = `${formatIndicatorDisplayName(row)} - ${monthName}/${state.year}`;
+
+  mpProjectedValue.value = "";
+  mpTargetValue.value = "";
+  mpProjectedGroup.classList.add("hidden");
+  mpTargetGroup.classList.add("hidden");
+
+  const isExecutive = state.user && state.user.role === "executivo";
+  const hasProjectedPermission = canEditProjectedValue();
+
+  if (hasProjectedPermission) {
+    mpProjectedGroup.classList.remove("hidden");
+    if (monthItem && monthItem.projected_value !== null && monthItem.projected_value !== undefined) {
+      mpProjectedValue.value = String(monthItem.projected_value);
+    }
+  }
+
+  if (isExecutive) {
+    mpTargetGroup.classList.remove("hidden");
+    if (monthItem && monthItem.monthly_target !== null && monthItem.monthly_target !== undefined) {
+      mpTargetValue.value = String(monthItem.monthly_target);
+    }
+  }
+
+  monthlyPlanningPanel.classList.remove("hidden");
+}
+
+monthlyPlanningForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  try {
+    const indicator_id = mpIndicatorId.value;
+    const year = parseInt(mpYear.value, 10);
+    const month = parseInt(mpMonth.value, 10);
+    let changed = false;
+
+    if (mpProjectedGroup.classList.contains("hidden") === false && mpProjectedValue.value) {
+      await api(`/api/indicators/${indicator_id}/monthly-projection`, {
+        method: "POST",
+        body: JSON.stringify({
+          year,
+          month,
+          projected_value: mpProjectedValue.value,
+        }),
+      });
+      changed = true;
+    }
+
+    if (mpTargetGroup.classList.contains("hidden") === false && mpTargetValue.value) {
+      await api(`/api/indicators/${indicator_id}/monthly-target`, {
+        method: "POST",
+        body: JSON.stringify({
+          year,
+          month,
+          target_value: mpTargetValue.value,
+        }),
+      });
+      changed = true;
+    }
+
+    if (changed) {
+      setStatus("Planejamento mensal salvo com sucesso.", "success");
+      monthlyPlanningPanel.classList.add("hidden");
+      await loadIndicators();
+    } else {
+      setStatus("Nenhum valor foi preenchido.", "error");
+    }
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+});
+
+mpCancel.addEventListener("click", () => {
+  monthlyPlanningPanel.classList.add("hidden");
+});
+
+// === Area Management Modal ===
+const areaCreateForm = document.getElementById("area-create-form");
+const areaEditForm = document.getElementById("area-edit-form");
+const areaDeleteForm = document.getElementById("area-delete-form");
+const amCloseBtn = document.getElementById("am-close-btn");
+const areaTabBtns = document.querySelectorAll(".area-tab-btn");
+const areaManagementTitle = areaManagementPanel.querySelector("h2");
+
+const areaTabTitles = {
+  create: "Criar Area",
+  edit: "Editar Area",
+  delete: "Apagar Area",
+};
+
+async function openAreaManagementPanel(tabName = "create") {
+  execAreaModeHint.textContent = "Carregando areas...";
+  await ensureAreasLoaded();
+  populateAreaSelects();
+  resetAreaForms();
+  showAreaTab(tabName);
+  areaManagementPanel.classList.remove("hidden");
+  execAreaModeHint.textContent = "";
+}
+
+function closeAreaManagementPanel() {
+  areaManagementPanel.classList.add("hidden");
+}
+
+function resetAreaForms() {
+  areaCreateForm.reset();
+  areaEditForm.reset();
+  areaDeleteForm.reset();
+  document.getElementById("ac-color").value = DEFAULT_AREA_COLOR;
+  document.getElementById("ae-color").value = DEFAULT_AREA_COLOR;
+  document.getElementById("ae-name").value = "";
+}
+
+function showAreaTab(tabName) {
+  const selectedTab = Object.prototype.hasOwnProperty.call(areaTabTitles, tabName)
+    ? tabName
+    : "create";
+
+  areaManagementTitle.textContent = areaTabTitles[selectedTab];
+  areaTabBtns.forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === selectedTab);
+  });
+
+  document.querySelectorAll(".area-tab-content").forEach((content) => {
+    content.classList.add("hidden");
+  });
+  document.getElementById(`area-tab-${selectedTab}`).classList.remove("hidden");
+}
+
+function createAreaOption(area) {
+  const option = document.createElement("option");
+  option.value = area.id;
+  option.textContent = area.hex_color ? `${area.name} (${area.hex_color})` : area.name;
+  return option;
+}
+
+function populateAreaSelects() {
+  const aeSelect = document.getElementById("ae-area-id");
+  const adSelect = document.getElementById("ad-area-id");
+
+  aeSelect.innerHTML = '<option value="">-- Selecione uma area --</option>';
+  adSelect.innerHTML = '<option value="">-- Selecione uma area --</option>';
+
+  state.areas.forEach((area) => {
+    aeSelect.appendChild(createAreaOption(area));
+    adSelect.appendChild(createAreaOption(area));
+  });
+
+  // Popula os campos quando uma area e selecionada para edicao.
+  aeSelect.removeEventListener("change", onAreaSelectChange);
+  aeSelect.addEventListener("change", onAreaSelectChange);
+}
+
+function onAreaSelectChange(e) {
+  const areaId = e.target.value;
+  const area = state.areas.find((item) => item.id === areaId);
+  if (!area) {
+    document.getElementById("ae-name").value = "";
+    document.getElementById("ae-color").value = DEFAULT_AREA_COLOR;
+    return;
+  }
+
+  document.getElementById("ae-name").value = area.name;
+  document.getElementById("ae-color").value = normalizeAreaColor(area.hex_color);
+}
+
+areaTabBtns.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    showAreaTab(btn.dataset.tab);
+  });
+});
+
+areaCreateForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  try {
+    const name = document.getElementById("ac-name").value;
+    const hexColor = validateOptionalHexColorOrThrow(document.getElementById("ac-color").value);
+
+    if (!name.trim()) {
+      throw new Error("Nome da area e obrigatorio.");
+    }
+
+    await api("/api/areas", {
+      method: "POST",
+      body: JSON.stringify({ name, hex_color: hexColor }),
+    });
+
+    setStatus("Area criada com sucesso.", "success");
+    areaCreateForm.reset();
+    await ensureAreasLoaded();
+    await loadIndicators();
+    closeAreaManagementPanel();
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+});
+
+areaEditForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  try {
+    const areaId = document.getElementById("ae-area-id").value;
+    const name = document.getElementById("ae-name").value;
+    const hexColor = validateOptionalHexColorOrThrow(document.getElementById("ae-color").value);
+
+    if (!areaId) {
+      throw new Error("Selecione uma area para editar.");
+    }
+    if (!name.trim()) {
+      throw new Error("Nome da area e obrigatorio.");
+    }
+
+    await api(`/api/areas/${areaId}`, {
+      method: "PUT",
+      body: JSON.stringify({ name, hex_color: hexColor }),
+    });
+
+    setStatus("Area atualizada com sucesso.", "success");
+    areaEditForm.reset();
+    await ensureAreasLoaded();
+    await loadIndicators();
+    closeAreaManagementPanel();
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+});
+
+areaDeleteForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  try {
+    const areaId = document.getElementById("ad-area-id").value;
+    if (!areaId) {
+      throw new Error("Selecione uma area para apagar.");
+    }
+
+    const confirmed = window.confirm(
+      "Tem certeza que deseja apagar esta area?"
+    );
+    if (!confirmed) return;
+
+    await api(`/api/areas/${areaId}`, { method: "DELETE" });
+
+    setStatus("Area apagada com sucesso.", "success");
+    areaDeleteForm.reset();
+    await ensureAreasLoaded();
+    await loadIndicators();
+    closeAreaManagementPanel();
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+});
+
+amCloseBtn.addEventListener("click", closeAreaManagementPanel);
+
+// Abre o formulario correto a partir dos botoes de area.
+async function openAreaManagementFromButton(tabName) {
+  try {
+    await openAreaManagementPanel(tabName);
+  } catch (error) {
+    execAreaModeHint.textContent = "";
+    setStatus(error.message, "error");
+  }
+}
+
+execAddAreaBtn.addEventListener("click", async () => {
+  await openAreaManagementFromButton("create");
+});
+
+execEditAreasBtn.addEventListener("click", async () => {
+  await openAreaManagementFromButton("edit");
+});
+
+execDeleteAreasBtn.addEventListener("click", async () => {
+  await openAreaManagementFromButton("delete");
 });
 
 bootstrap();

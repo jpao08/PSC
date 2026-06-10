@@ -4,6 +4,7 @@ import calendar
 import base64
 import hashlib
 import hmac
+import re
 import secrets
 from decimal import Decimal
 from typing import Iterable
@@ -19,6 +20,7 @@ from core.domain.models import (
 
 _VALID_ROLES = {"gestor_area", "executivo"}
 _VALID_AGGREGATIONS = {"sum", "avg"}
+_HEX_COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
 def normalize_email(email: str) -> str:
@@ -120,10 +122,27 @@ def ensure_can_view_indicator(user: User, indicator: Indicator) -> None:
     raise AuthorizationError("Usuario sem permissao para acessar este indicador.")
 
 
+def ensure_can_edit_projected_value(user: User, indicator: Indicator) -> None:
+    ensure_can_view_indicator(user=user, indicator=indicator)
+    if not user.can_edit_projected_value:
+        raise AuthorizationError("Usuario sem permissao para cadastrar valor projetado.")
+
+
 def ensure_required_text(value: str, field_name: str) -> str:
     cleaned = value.strip()
     if not cleaned:
         raise ValidationError(f"Campo obrigatorio: {field_name}.")
+    return cleaned
+
+
+def ensure_hex_color_or_none(hex_color: str | None, field_name: str = "hex_color") -> str | None:
+    if hex_color is None:
+        return None
+    cleaned = hex_color.strip()
+    if not cleaned:
+        return None
+    if not _HEX_COLOR_PATTERN.fullmatch(cleaned):
+        raise ValidationError(f"Campo {field_name} deve seguir o formato #RRGGBB.")
     return cleaned
 
 

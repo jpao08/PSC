@@ -19,12 +19,16 @@ from core.ports.repositories import (
 from core.ports.task_gateway import TaskGatewayPort
 from core.use_cases.authenticate_user import AuthenticateUser
 from core.use_cases.create_action_plan import CreateActionPlan
+from core.use_cases.create_area import CreateArea
 from core.use_cases.create_indicator import CreateIndicator
+from core.use_cases.delete_area import DeleteArea
 from core.use_cases.delete_indicator import DeleteIndicator
 from core.use_cases.list_indicators import ListIndicators
 from core.use_cases.register_indicator_value import RegisterIndicatorValue
 from core.use_cases.search_bitrix_users import SearchBitrixUsers
+from core.use_cases.update_area import UpdateArea
 from core.use_cases.update_indicator import UpdateIndicator
+from core.use_cases.upsert_indicator_month_projection import UpsertIndicatorMonthProjection
 from core.use_cases.upsert_indicator_month_target import UpsertIndicatorMonthTarget
 from infra.bitrix_client import BitrixClient
 from infra.config import Settings
@@ -50,7 +54,11 @@ class Container:
     create_indicator: CreateIndicator
     update_indicator: UpdateIndicator
     delete_indicator: DeleteIndicator
+    create_area: CreateArea
+    update_area: UpdateArea
+    delete_area: DeleteArea
     upsert_indicator_month_target: UpsertIndicatorMonthTarget
+    upsert_indicator_month_projection: UpsertIndicatorMonthProjection
     search_bitrix_users: SearchBitrixUsers
 
 
@@ -108,7 +116,13 @@ def build_container() -> Container:
         create_indicator=CreateIndicator(indicator_repository=indicator_repository),
         update_indicator=UpdateIndicator(indicator_repository=indicator_repository),
         delete_indicator=DeleteIndicator(indicator_repository=indicator_repository),
+        create_area=CreateArea(indicator_repository=indicator_repository),
+        update_area=UpdateArea(indicator_repository=indicator_repository),
+        delete_area=DeleteArea(indicator_repository=indicator_repository),
         upsert_indicator_month_target=UpsertIndicatorMonthTarget(
+            indicator_repository=indicator_repository
+        ),
+        upsert_indicator_month_projection=UpsertIndicatorMonthProjection(
             indicator_repository=indicator_repository
         ),
         search_bitrix_users=SearchBitrixUsers(task_gateway=task_gateway),

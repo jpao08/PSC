@@ -16,6 +16,7 @@ from core.domain.models import (
     ActionPlanHistoryEvent,
     Area,
     Indicator,
+    IndicatorMonthProjection,
     IndicatorMonthTarget,
     IndicatorUnit,
     IndicatorValue,
@@ -126,6 +127,7 @@ class SupabaseUserRepository(UserRepositoryPort):
             area_id=str(row["area_id"]) if row.get("area_id") else None,
             is_active=bool(row.get("is_active", True)),
             password_hash=str(row.get("password_hash") or ""),
+            can_edit_projected_value=bool(row.get("can_edit_projected_value", False)),
         )
 
 
@@ -133,24 +135,90 @@ class SupabaseIndicatorRepository(IndicatorRepositoryPort):
     def __init__(self, client: Client) -> None:
         self.client = client
 
-    def list_areas(self) -> list[Area]:
-        response = (
-            self.client.table("areas")
-            .select("*")
-            .eq("is_active", True)
-            .order("name")
-            .execute()
-        )
+    def _list_area_map(self, only_active: bool) -> dict[str, Area]:
+        query = self.client.table("areas").select("*")
+        if only_active:
+            query = query.eq("is_active", True)
+        response = query.execute()
         rows = response.data or []
-        return [
-            Area(
+        return {
+            str(row["id"]): Area(
                 id=str(row["id"]),
                 name=str(row["name"]),
                 hex_color=str(row["hex_color"]) if row.get("hex_color") else None,
                 is_active=bool(row.get("is_active", True)),
             )
             for row in rows
-        ]
+        }
+
+    def list_areas(self) -> list[Area]:
+        return sorted(self._list_area_map(only_active=True).values(), key=lambda area: area.name)
+
+    def get_area_by_id(self, area_id: str) -> Area | None:
+        response = (
+            self.client.table("areas")
+            .select("*")
+            .eq("id", area_id)
+            .limit(1)
+            .execute()
+        )
+        rows = response.data or []
+        if not rows:
+            return None
+        row = rows[0]
+        return Area(
+            id=str(row["id"]),
+            name=str(row["name"]),
+            hex_color=str(row["hex_color"]) if row.get("hex_color") else None,
+            is_active=bool(row.get("is_active", True)),
+        )
+
+    def exists_active_area_name(self, name: str, exclude_area_id: str | None = None) -> bool:
+        query = self.client.table("areas").select("id").eq("is_active", True).eq("name", name)
+        if exclude_area_id:
+            query = query.neq("id", exclude_area_id)
+        response = query.limit(1).execute()
+        rows = response.data or []
+        return bool(rows)
+
+    def create_area(self, name: str, hex_color: str | None) -> Area:
+        payload = {
+            "name": name,
+            "hex_color": hex_color,
+            "is_active": True,
+        }
+        response = self.client.table("areas").insert(payload).execute()
+        row = (response.data or [])[0]
+        return Area(
+            id=str(row["id"]),
+            name=str(row["name"]),
+            hex_color=str(row["hex_color"]) if row.get("hex_color") else None,
+            is_active=bool(row.get("is_active", True)),
+        )
+
+    def update_area(self, area_id: str, name: str, hex_color: str | None) -> Area:
+        payload = {
+            "name": name,
+            "hex_color": hex_color,
+        }
+        response = self.client.table("areas").update(payload).eq("id", area_id).execute()
+        rows = response.data or []
+        if not rows:
+            refreshed = self.get_area_by_id(area_id)
+            if refreshed is None:
+                raise NotFoundError("Area nao encontrada para atualizacao.")
+            return refreshed
+
+        row = rows[0]
+        return Area(
+            id=str(row["id"]),
+            name=str(row["name"]),
+            hex_color=str(row["hex_color"]) if row.get("hex_color") else None,
+            is_active=bool(row.get("is_active", True)),
+        )
+
+    def deactivate_area(self, area_id: str) -> None:
+        self.client.table("areas").update({"is_active": False}).eq("id", area_id).execute()
 
     def list_units(self) -> list[IndicatorUnit]:
         response = (
@@ -197,7 +265,7 @@ class SupabaseIndicatorRepository(IndicatorRepositoryPort):
         response = query.order("name").execute()
         rows = response.data or []
 
-        area_map = {area.id: area for area in self.list_areas()}
+        area_map = self._list_area_map(only_active=False)
         unit_map = {unit.id: unit for unit in self.list_units()}
         return [
             self._to_indicator(
@@ -220,7 +288,7 @@ class SupabaseIndicatorRepository(IndicatorRepositoryPort):
         if not rows:
             return None
 
-        area_map = {area.id: area for area in self.list_areas()}
+        area_map = self._list_area_map(only_active=False)
         unit_map = {unit.id: unit for unit in self.list_units()}
         row = rows[0]
         return self._to_indicator(
@@ -377,6 +445,7 @@ class SupabaseIndicatorRepository(IndicatorRepositoryPort):
             self.client.table("action_plan_history").delete().in_("action_plan_id", action_plan_ids).execute()
 
         self.client.table("action_plans").delete().eq("indicator_id", indicator_id).execute()
+        self.client.table("indicator_month_projections").delete().eq("indicator_id", indicator_id).execute()
         self.client.table("indicator_month_targets").delete().eq("indicator_id", indicator_id).execute()
         self.client.table("indicator_value_history").delete().eq("indicator_id", indicator_id).execute()
         self.client.table("indicator_values").delete().eq("indicator_id", indicator_id).execute()
@@ -399,6 +468,33 @@ class SupabaseIndicatorRepository(IndicatorRepositoryPort):
                 year=int(row["year"]),
                 month=int(row["month"]),
                 target_value=Decimal(str(row["target_value"])),
+                created_by=str(row["created_by"]) if row.get("created_by") else None,
+                updated_by=str(row["updated_by"]) if row.get("updated_by") else None,
+            )
+            for row in rows
+        ]
+
+    def list_month_projections(
+        self,
+        indicator_ids: list[str],
+        year: int,
+    ) -> list[IndicatorMonthProjection]:
+        if not indicator_ids:
+            return []
+        response = (
+            self.client.table("indicator_month_projections")
+            .select("*")
+            .in_("indicator_id", indicator_ids)
+            .eq("year", year)
+            .execute()
+        )
+        rows = response.data or []
+        return [
+            IndicatorMonthProjection(
+                indicator_id=str(row["indicator_id"]),
+                year=int(row["year"]),
+                month=int(row["month"]),
+                projected_value=Decimal(str(row["projected_value"])),
                 created_by=str(row["created_by"]) if row.get("created_by") else None,
                 updated_by=str(row["updated_by"]) if row.get("updated_by") else None,
             )
@@ -454,6 +550,59 @@ class SupabaseIndicatorRepository(IndicatorRepositoryPort):
             year=int(row["year"]),
             month=int(row["month"]),
             target_value=Decimal(str(row["target_value"])),
+            created_by=str(row["created_by"]) if row.get("created_by") else None,
+            updated_by=str(row["updated_by"]) if row.get("updated_by") else None,
+        )
+
+    def upsert_month_projection(
+        self,
+        indicator_id: str,
+        year: int,
+        month: int,
+        projected_value: Decimal,
+        user_id: str,
+    ) -> IndicatorMonthProjection:
+        existing_response = (
+            self.client.table("indicator_month_projections")
+            .select("*")
+            .eq("indicator_id", indicator_id)
+            .eq("year", year)
+            .eq("month", month)
+            .limit(1)
+            .execute()
+        )
+        existing_rows = existing_response.data or []
+
+        if existing_rows:
+            payload = {
+                "projected_value": str(projected_value),
+                "updated_by": user_id,
+            }
+            response = (
+                self.client.table("indicator_month_projections")
+                .update(payload)
+                .eq("indicator_id", indicator_id)
+                .eq("year", year)
+                .eq("month", month)
+                .execute()
+            )
+        else:
+            payload = {
+                "indicator_id": indicator_id,
+                "year": year,
+                "month": month,
+                "projected_value": str(projected_value),
+                "created_by": user_id,
+                "updated_by": user_id,
+            }
+            response = self.client.table("indicator_month_projections").insert(payload).execute()
+
+        row = (response.data or [])[0]
+        return IndicatorMonthProjection(
+            indicator_id=str(row["indicator_id"]),
+            year=int(row["year"]),
+            month=int(row["month"]),
+            projected_value=Decimal(str(row["projected_value"])),
             created_by=str(row["created_by"]) if row.get("created_by") else None,
             updated_by=str(row["updated_by"]) if row.get("updated_by") else None,
         )

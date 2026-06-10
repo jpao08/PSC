@@ -8,6 +8,7 @@ from core.domain.models import (
     ActionPlanHistoryEvent,
     Area,
     Indicator,
+    IndicatorMonthProjection,
     IndicatorMonthTarget,
     IndicatorUnit,
     IndicatorValue,
@@ -62,6 +63,21 @@ class IndicatorRepositoryPort(Protocol):
     def list_areas(self) -> list[Area]:
         ...
 
+    def get_area_by_id(self, area_id: str) -> Area | None:
+        ...
+
+    def exists_active_area_name(self, name: str, exclude_area_id: str | None = None) -> bool:
+        ...
+
+    def create_area(self, name: str, hex_color: str | None) -> Area:
+        ...
+
+    def update_area(self, area_id: str, name: str, hex_color: str | None) -> Area:
+        ...
+
+    def deactivate_area(self, area_id: str) -> None:
+        ...
+
     def list_units(self) -> list[IndicatorUnit]:
         ...
 
@@ -69,6 +85,13 @@ class IndicatorRepositoryPort(Protocol):
         ...
 
     def list_month_targets(self, indicator_ids: list[str], year: int) -> list[IndicatorMonthTarget]:
+        ...
+
+    def list_month_projections(
+        self,
+        indicator_ids: list[str],
+        year: int,
+    ) -> list[IndicatorMonthProjection]:
         ...
 
     def upsert_month_target(
@@ -79,6 +102,16 @@ class IndicatorRepositoryPort(Protocol):
         target_value: Decimal,
         user_id: str,
     ) -> IndicatorMonthTarget:
+        ...
+
+    def upsert_month_projection(
+        self,
+        indicator_id: str,
+        year: int,
+        month: int,
+        projected_value: Decimal,
+        user_id: str,
+    ) -> IndicatorMonthProjection:
         ...
 
 

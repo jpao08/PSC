@@ -65,10 +65,21 @@ class UpdateIndicatorPayload(BaseModel):
     unit_id: str
 
 
+class AreaPayload(BaseModel):
+    name: str
+    hex_color: str | None = None
+
+
 class MonthlyTargetPayload(BaseModel):
     year: int
     month: int = Field(ge=1, le=12)
     target_value: str
+
+
+class MonthlyProjectionPayload(BaseModel):
+    year: int
+    month: int = Field(ge=1, le=12)
+    projected_value: str
 
 
 def _to_http_error(error: DomainError) -> HTTPException:
@@ -107,6 +118,7 @@ def _serialize_user(user: User) -> dict[str, Any]:
         "role": user.role,
         "area_id": user.area_id,
         "is_active": user.is_active,
+        "can_edit_projected_value": user.can_edit_projected_value,
     }
 
 
@@ -268,6 +280,61 @@ def create_api_router(container: Container) -> APIRouter:
         except DomainError as error:
             raise _to_http_error(error) from error
 
+    @router.post("/areas")
+    def create_area(
+        payload: AreaPayload,
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        try:
+            created = container.create_area.execute(
+                user=current_user,
+                name=payload.name,
+                hex_color=payload.hex_color,
+            )
+        except DomainError as error:
+            raise _to_http_error(error) from error
+
+        return {
+            "id": created.id,
+            "name": created.name,
+            "hex_color": created.hex_color,
+            "is_active": created.is_active,
+        }
+
+    @router.put("/areas/{area_id}")
+    def update_area(
+        area_id: str,
+        payload: AreaPayload,
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        try:
+            updated = container.update_area.execute(
+                user=current_user,
+                area_id=area_id,
+                name=payload.name,
+                hex_color=payload.hex_color,
+            )
+        except DomainError as error:
+            raise _to_http_error(error) from error
+
+        return {
+            "id": updated.id,
+            "name": updated.name,
+            "hex_color": updated.hex_color,
+            "is_active": updated.is_active,
+        }
+
+    @router.delete("/areas/{area_id}")
+    def delete_area(
+        area_id: str,
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, str]:
+        try:
+            container.delete_area.execute(user=current_user, area_id=area_id)
+        except DomainError as error:
+            raise _to_http_error(error) from error
+        return {"status": "deleted"}
+
     @router.get("/indicator-units")
     def list_indicator_units(current_user: User = Depends(get_current_user)) -> list[dict[str, Any]]:
         try:
@@ -326,6 +393,7 @@ def create_api_router(container: Container) -> APIRouter:
                 {
                     "month": month,
                     "value": _decimal_to_float(row.monthly_values.get(month)),
+                    "projected_value": _decimal_to_float(row.monthly_projections.get(month)),
                     "monthly_target": _decimal_to_float(row.monthly_targets.get(month)),
                     "below_target": bool(row.below_target.get(month, False)),
                 }
@@ -552,6 +620,33 @@ def create_api_router(container: Container) -> APIRouter:
             "year": saved.year,
             "month": saved.month,
             "target_value": _decimal_to_float(saved.target_value),
+            "created_by": saved.created_by,
+            "updated_by": saved.updated_by,
+        }
+
+    @router.post("/indicators/{indicator_id}/monthly-projection")
+    def upsert_monthly_projection(
+        indicator_id: str,
+        payload: MonthlyProjectionPayload,
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        projected_value = _parse_decimal(payload.projected_value, "projected_value")
+        try:
+            saved = container.upsert_indicator_month_projection.execute(
+                user=current_user,
+                indicator_id=indicator_id,
+                year=payload.year,
+                month=payload.month,
+                projected_value=projected_value,
+            )
+        except DomainError as error:
+            raise _to_http_error(error) from error
+
+        return {
+            "indicator_id": saved.indicator_id,
+            "year": saved.year,
+            "month": saved.month,
+            "projected_value": _decimal_to_float(saved.projected_value),
             "created_by": saved.created_by,
             "updated_by": saved.updated_by,
         }
