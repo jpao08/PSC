@@ -25,6 +25,7 @@ from core.use_cases.create_action_plan import CreateActionPlan
 from core.use_cases.create_area import CreateArea
 from core.use_cases.create_indicator import CreateIndicator
 from core.use_cases.delete_area import DeleteArea
+from core.use_cases.list_indicators import ListIndicators
 from core.use_cases.register_indicator_value import RegisterIndicatorValue
 from core.use_cases.search_bitrix_users import SearchBitrixUsers
 from core.use_cases.update_area import UpdateArea
@@ -35,6 +36,7 @@ def build_user(
     role: str,
     area_id: str | None = None,
     can_edit_projected_value: bool = False,
+    area_ids: list[str] | None = None,
 ) -> User:
     return User(
         id="user-1",
@@ -45,6 +47,7 @@ def build_user(
         is_active=True,
         password_hash="ignored",
         can_edit_projected_value=can_edit_projected_value,
+        area_ids=area_ids,
     )
 
 
@@ -62,8 +65,17 @@ class FakeIndicatorRepository:
         self.last_projection_upsert: IndicatorMonthProjection | None = None
         self.existing_names = existing_names or set()
 
-    def list_active(self, area_id: str | None = None) -> list[Indicator]:
-        return [self.indicator]
+    def list_active(
+        self,
+        area_id: str | None = None,
+        area_ids: list[str] | None = None,
+    ) -> list[Indicator]:
+        indicators = [self.indicator]
+        if area_ids is not None:
+            return [indicator for indicator in indicators if indicator.area_id in area_ids]
+        if area_id is not None:
+            return [indicator for indicator in indicators if indicator.area_id == area_id]
+        return indicators
 
     def get_by_id(self, indicator_id: str) -> Indicator | None:
         if indicator_id == self.indicator.id:
@@ -302,6 +314,59 @@ def test_manager_area_authorization_for_weekly_update() -> None:
         )
 
 
+def test_manager_multi_area_authorization_for_weekly_update() -> None:
+    indicator = Indicator(
+        id="ind-1",
+        area_id="area-B",
+        area_name="Area B",
+        area_hex_color=None,
+        name="Receita",
+        description=None,
+        aggregation_type="sum",
+        unit_id="unit-brl",
+        unit="R$",
+        is_active=True,
+        created_by="user-1",
+    )
+    repository = FakeIndicatorRepository(indicator=indicator)
+    use_case = RegisterIndicatorValue(indicator_repository=repository)
+    manager = build_user(role="gestor_area", area_ids=["area-A", "area-B"])
+
+    use_case.execute(
+        user=manager,
+        indicator_id="ind-1",
+        year=2026,
+        month=5,
+        week_number=1,
+        value=Decimal("10"),
+    )
+
+    assert repository.saved_values[0]["value"] == Decimal("10")
+
+
+def test_manager_multi_area_can_list_allowed_indicator() -> None:
+    indicator = Indicator(
+        id="ind-1",
+        area_id="area-B",
+        area_name="Area B",
+        area_hex_color=None,
+        name="Receita",
+        description=None,
+        aggregation_type="sum",
+        unit_id="unit-brl",
+        unit="R$",
+        is_active=True,
+        created_by="user-1",
+    )
+    repository = FakeIndicatorRepository(indicator=indicator)
+    use_case = ListIndicators(indicator_repository=repository)
+    manager = build_user(role="gestor_area", area_ids=["area-A", "area-B"])
+
+    rows = use_case.execute(user=manager, year=2026)
+
+    assert [row.indicator_id for row in rows] == ["ind-1"]
+
+
 def test_create_action_plan_calls_bitrix_gateway() -> None:
     indicator = Indicator(
         id="ind-1",
@@ -473,6 +538,35 @@ def test_upsert_month_projection_succeeds_with_permission_flag() -> None:
     assert repository.last_projection_upsert is not None
 
 
+def test_upsert_month_projection_allows_negative_value_with_permission_flag() -> None:
+    indicator = Indicator(
+        id="ind-1",
+        area_id="area-A",
+        area_name="Area A",
+        area_hex_color=None,
+        name="Resultado",
+        description=None,
+        aggregation_type="sum",
+        unit_id="unit-brl",
+        unit="R$",
+        is_active=True,
+        created_by="user-1",
+    )
+    repository = FakeIndicatorRepository(indicator=indicator)
+    use_case = UpsertIndicatorMonthProjection(indicator_repository=repository)
+    user_with_flag = build_user(role="executivo", can_edit_projected_value=True)
+
+    saved = use_case.execute(
+        user=user_with_flag,
+        indicator_id="ind-1",
+        year=2026,
+        month=6,
+        projected_value=Decimal("-100"),
+    )
+
+    assert saved.projected_value == Decimal("-100")
+
+
 def test_upsert_month_projection_manager_same_area_with_flag_succeeds() -> None:
     indicator = Indicator(
         id="ind-1",
@@ -537,6 +631,39 @@ def test_upsert_month_projection_manager_other_area_with_flag_denied() -> None:
             month=6,
             projected_value=Decimal("88"),
         )
+
+
+def test_upsert_month_projection_manager_multi_area_with_flag_succeeds() -> None:
+    indicator = Indicator(
+        id="ind-1",
+        area_id="area-B",
+        area_name="Area B",
+        area_hex_color=None,
+        name="Receita",
+        description=None,
+        aggregation_type="sum",
+        unit_id="unit-brl",
+        unit="R$",
+        is_active=True,
+        created_by="user-1",
+    )
+    repository = FakeIndicatorRepository(indicator=indicator)
+    use_case = UpsertIndicatorMonthProjection(indicator_repository=repository)
+    manager = build_user(
+        role="gestor_area",
+        area_ids=["area-A", "area-B"],
+        can_edit_projected_value=True,
+    )
+
+    saved = use_case.execute(
+        user=manager,
+        indicator_id="ind-1",
+        year=2026,
+        month=6,
+        projected_value=Decimal("88"),
+    )
+
+    assert saved.projected_value == Decimal("88")
 
 
 def test_create_area_only_executive() -> None:

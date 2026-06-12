@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PSC Admin de Usuarios</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Admin de Usuarios PSC</h1>
+      <section id="status" class="status"></section>
+
+      <section id="login-card" class="panel">
+        <h2>Acesso administrativo</h2>
+        <form id="login-form" class="form-grid">
+          <label>
+            Senha admin
+            <input id="admin-password" type="password" required />
+          </label>
+          <button type="submit">Entrar</button>
+        </form>
+      </section>
+
+      <section id="admin-panel" class="hidden">
+        <div class="toolbar">
+          <h2>Usuarios</h2>
+          <div class="toolbar-actions">
+            <button id="new-user-btn" type="button">Novo usuario</button>
+            <button id="reload-btn" type="button">Recarregar</button>
+            <button id="shutdown-btn" type="button" class="danger">Encerrar admin</button>
+            <button id="logout-btn" type="button" class="secondary">Sair</button>
+          </div>
+        </div>
+
+        <div class="layout">
+          <section class="panel">
+            <div class="table-wrap">
+              <table id="users-table"></table>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2 id="form-title">Novo usuario</h2>
+            <form id="user-form" class="form-grid">
+              <input id="user-id" type="hidden" />
+              <label>
+                Nome
+                <input id="name" required />
+              </label>
+              <label>
+                Email
+                <input id="email" type="email" required />
+              </label>
+              <label>
+                Senha
+                <input id="password" type="password" />
+              </label>
+              <label>
+                Perfil
+                <select id="role" required>
+                  <option value="gestor_area">Gestor de Area</option>
+                  <option value="executivo">Executivo</option>
+                </select>
+              </label>
+              <label class="checkbox-line">
+                <input id="is-active" type="checkbox" checked />
+                Ativo
+              </label>
+              <label class="checkbox-line">
+                <input id="can-edit-projected" type="checkbox" />
+                Pode editar valor projetado
+              </label>
+              <label>
+                Areas vinculadas
+                <select id="area-ids" multiple size="8"></select>
+              </label>
+              <div class="toolbar-actions">
+                <button type="submit">Salvar</button>
+                <button id="clear-form-btn" type="button" class="secondary">Limpar</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

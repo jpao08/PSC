@@ -143,6 +143,11 @@ button:hover {
   flex-wrap: wrap;
 }
 
+.filters-row select[multiple] {
+  min-width: 220px;
+  min-height: 104px;
+}
+
 .indicator-admin-actions {
   margin-bottom: 12px;
   flex-wrap: wrap;
@@ -163,7 +168,8 @@ button:hover {
 
 table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 th,
@@ -178,6 +184,42 @@ th:first-child,
 td:first-child {
   min-width: 210px;
   text-align: left;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: inherit;
+  box-shadow: 2px 0 0 var(--line);
+}
+
+th:first-child {
+  z-index: 3;
+  background: var(--card);
+}
+
+td:first-child {
+  background: #fff;
+}
+
+tbody tr[style] td:first-child {
+  background-color: inherit;
+}
+
+th.current-month,
+td.current-month {
+  border-left-width: 3px;
+  border-right-width: 3px;
+  border-left-color: var(--text);
+  border-right-color: var(--text);
+}
+
+th.current-month {
+  border-top-width: 3px;
+  border-top-color: var(--text);
+}
+
+tbody tr:last-child td.current-month {
+  border-bottom-width: 3px;
+  border-bottom-color: var(--text);
 }
 
 .clickable {

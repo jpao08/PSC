@@ -28,3 +28,17 @@ def test_monthly_calculation_avg() -> None:
         month=5,
     )
     assert result == Decimal("15")
+
+
+def test_monthly_calculation_latest_returns_last_filled_range() -> None:
+    result = calculate_monthly_value(
+        values=[
+            (1, Decimal("10")),
+            (2, Decimal("20")),
+            (4, Decimal("55")),
+        ],
+        aggregation_type="latest",
+        year=2026,
+        month=5,
+    )
+    assert result == Decimal("55")

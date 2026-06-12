@@ -51,7 +51,15 @@ create table if not exists users (
   role text not null references roles(code),
   area_id uuid null references areas(id),
   is_active boolean not null default true,
+  can_edit_projected_value boolean not null default false,
   created_at timestamptz not null default now()
+);
+
+create table if not exists user_area_access (
+  user_id uuid not null references users(id) on delete cascade,
+  area_id uuid not null references areas(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_id, area_id)
 );
 
 create table if not exists indicators (
@@ -59,7 +67,7 @@ create table if not exists indicators (
   area_id uuid not null references areas(id),
   name text not null,
   description text null,
-  aggregation_type text not null check (aggregation_type in ('sum', 'avg')),
+  aggregation_type text not null check (aggregation_type in ('sum', 'avg', 'latest')),
   unit text null,
   is_active boolean not null default true,
   created_by uuid null references users(id),
@@ -136,6 +144,12 @@ for each row execute function set_updated_at();
 
 create index if not exists idx_indicators_area_id on indicators(area_id);
 create index if not exists idx_users_role on users(role);
+create index if not exists idx_users_can_edit_projected_value
+  on users(can_edit_projected_value);
+create index if not exists idx_user_area_access_user_id
+  on user_area_access(user_id);
+create index if not exists idx_user_area_access_area_id
+  on user_area_access(area_id);
 create index if not exists idx_indicator_values_indicator_year_month
   on indicator_values(indicator_id, year, month);
 create index if not exists idx_indicator_value_history_lookup

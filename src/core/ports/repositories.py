@@ -27,7 +27,11 @@ class UserRepositoryPort(Protocol):
 
 
 class IndicatorRepositoryPort(Protocol):
-    def list_active(self, area_id: str | None = None) -> list[Indicator]:
+    def list_active(
+        self,
+        area_id: str | None = None,
+        area_ids: list[str] | None = None,
+    ) -> list[Indicator]:
         ...
 
     def get_by_id(self, indicator_id: str) -> Indicator | None:

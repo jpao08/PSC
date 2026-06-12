@@ -117,6 +117,7 @@ def _serialize_user(user: User) -> dict[str, Any]:
         "name": user.name,
         "role": user.role,
         "area_id": user.area_id,
+        "area_ids": user.area_ids or ([user.area_id] if user.area_id else []),
         "is_active": user.is_active,
         "can_edit_projected_value": user.can_edit_projected_value,
     }

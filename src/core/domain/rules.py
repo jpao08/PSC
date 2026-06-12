@@ -19,7 +19,7 @@ from core.domain.models import (
 )
 
 _VALID_ROLES = {"gestor_area", "executivo"}
-_VALID_AGGREGATIONS = {"sum", "avg"}
+_VALID_AGGREGATIONS = {"sum", "avg", "latest"}
 _HEX_COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
@@ -74,7 +74,7 @@ def ensure_valid_role(role: str) -> None:
 
 def ensure_valid_aggregation(aggregation_type: str) -> None:
     if aggregation_type not in _VALID_AGGREGATIONS:
-        raise ValidationError("Tipo de agregacao invalido. Use sum ou avg.")
+        raise ValidationError("Tipo de agregacao invalido. Use sum, avg ou latest.")
 
 
 def ensure_month(month: int) -> None:
@@ -110,16 +110,23 @@ def get_range_days_count(year: int, month: int, week_number: int) -> int:
 def ensure_indicator_in_user_area(user: User, indicator: Indicator) -> None:
     if user.role != "gestor_area":
         raise AuthorizationError("Somente gestor de area pode atualizar valores semanais.")
-    if not user.area_id or user.area_id != indicator.area_id:
+    if indicator.area_id not in get_user_area_ids(user):
         raise AuthorizationError("Indicador nao pertence a area do gestor.")
 
 
 def ensure_can_view_indicator(user: User, indicator: Indicator) -> None:
     if user.role == "executivo":
         return
-    if user.role == "gestor_area" and user.area_id == indicator.area_id:
+    if user.role == "gestor_area" and indicator.area_id in get_user_area_ids(user):
         return
     raise AuthorizationError("Usuario sem permissao para acessar este indicador.")
+
+
+def get_user_area_ids(user: User) -> list[str]:
+    area_ids = list(user.area_ids or [])
+    if user.area_id and user.area_id not in area_ids:
+        area_ids.append(user.area_id)
+    return area_ids
 
 
 def ensure_can_edit_projected_value(user: User, indicator: Indicator) -> None:
@@ -160,6 +167,8 @@ def calculate_monthly_value(
     total = sum(raw_values, start=Decimal("0"))
     if aggregation_type == "sum":
         return total
+    if aggregation_type == "latest":
+        return max(collected, key=lambda item: item[0])[1]
 
     weighted_total = Decimal("0")
     total_days = Decimal("0")

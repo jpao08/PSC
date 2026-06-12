@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Literal
 
 Role = Literal["gestor_area", "executivo"]
-AggregationType = Literal["sum", "avg"]
+AggregationType = Literal["sum", "avg", "latest"]
 
 
 class DomainError(Exception):
@@ -39,6 +39,7 @@ class User:
     is_active: bool
     password_hash: str
     can_edit_projected_value: bool = False
+    area_ids: list[str] | None = None
 
 
 @dataclass(frozen=True)

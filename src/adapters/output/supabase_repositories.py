@@ -118,16 +118,33 @@ class SupabaseUserRepository(UserRepositoryPort):
         return self._to_user(rows[0])
 
     @staticmethod
-    def _to_user(row: dict[str, Any]) -> User:
+    def _area_ids_from_rows(rows: list[dict[str, Any]]) -> list[str]:
+        return [str(row["area_id"]) for row in rows if row.get("area_id")]
+
+    def _list_user_area_ids(self, user_id: str) -> list[str]:
+        response = (
+            self.client.table("user_area_access")
+            .select("area_id")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return self._area_ids_from_rows(response.data or [])
+
+    def _to_user(self, row: dict[str, Any]) -> User:
+        area_id = str(row["area_id"]) if row.get("area_id") else None
+        area_ids = self._list_user_area_ids(str(row["id"]))
+        if not area_ids and area_id:
+            area_ids = [area_id]
         return User(
             id=str(row["id"]),
             email=str(row["email"]),
             name=str(row.get("name") or ""),
             role=str(row["role"]),
-            area_id=str(row["area_id"]) if row.get("area_id") else None,
+            area_id=area_id,
             is_active=bool(row.get("is_active", True)),
             password_hash=str(row.get("password_hash") or ""),
             can_edit_projected_value=bool(row.get("can_edit_projected_value", False)),
+            area_ids=area_ids,
         )
 
 
@@ -258,9 +275,20 @@ class SupabaseIndicatorRepository(IndicatorRepositoryPort):
             is_active=bool(row.get("is_active", True)),
         )
 
-    def list_active(self, area_id: str | None = None) -> list[Indicator]:
+    def list_active(
+        self,
+        area_id: str | None = None,
+        area_ids: list[str] | None = None,
+    ) -> list[Indicator]:
         query = self.client.table("indicators").select("*").eq("is_active", True)
-        if area_id:
+        effective_area_ids = list(area_ids or [])
+        if area_id and area_id not in effective_area_ids:
+            effective_area_ids.append(area_id)
+        if effective_area_ids:
+            query = query.in_("area_id", effective_area_ids)
+        elif area_ids is not None:
+            return []
+        elif area_id:
             query = query.eq("area_id", area_id)
         response = query.order("name").execute()
         rows = response.data or []

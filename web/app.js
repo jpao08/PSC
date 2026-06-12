@@ -11,7 +11,7 @@ const state = {
   bitrixUserSearchTimer: null,
   bitrixUserSearchSequence: 0,
   executiveIndicatorFilter: "",
-  executiveAreaFilter: "",
+  executiveAreaFilters: [],
   executiveIndicatorActionMode: "none",
 };
 
@@ -22,6 +22,7 @@ const monthsLabels = [
   "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
   "Jul", "Ago", "Set", "Out", "Nov", "Dez",
 ];
+const currentDate = new Date();
 
 const statusBox = document.getElementById("status");
 const loginSection = document.getElementById("login-section");
@@ -162,7 +163,7 @@ function applyLoggedInView() {
     executiveAreaActions.classList.remove("hidden");
     executiveIndicatorActions.classList.remove("hidden");
     executiveIndicatorFilterInput.value = state.executiveIndicatorFilter;
-    executiveAreaFilterSelect.value = state.executiveAreaFilter;
+    syncExecutiveAreaFilterSelect();
     execAreaModeHint.textContent = "";
     setExecutiveIndicatorActionMode(state.executiveIndicatorActionMode || "none");
   } else {
@@ -172,10 +173,10 @@ function applyLoggedInView() {
     createIndicatorPanel.classList.add("hidden");
     areaManagementPanel.classList.add("hidden");
     state.executiveIndicatorFilter = "";
-    state.executiveAreaFilter = "";
+    state.executiveAreaFilters = [];
     state.executiveIndicatorActionMode = "none";
     executiveIndicatorFilterInput.value = "";
-    executiveAreaFilterSelect.value = "";
+    syncExecutiveAreaFilterSelect();
   }
 }
 
@@ -256,7 +257,7 @@ function updateExecutiveAreaFilterOptions() {
     return;
   }
 
-  const currentValue = state.executiveAreaFilter;
+  const currentValues = new Set(state.executiveAreaFilters || []);
   const uniqueAreas = new Map();
   state.indicators.forEach((row) => {
     if (!uniqueAreas.has(row.area_id)) {
@@ -271,27 +272,25 @@ function updateExecutiveAreaFilterOptions() {
   });
 
   executiveAreaFilterSelect.innerHTML = "";
-  const allOption = document.createElement("option");
-  allOption.value = "";
-  allOption.textContent = "Todas as areas";
-  executiveAreaFilterSelect.appendChild(allOption);
-
   sortedOptions.forEach(([areaId, areaName]) => {
     const option = document.createElement("option");
     option.value = areaId;
     option.textContent = areaName;
+    option.selected = currentValues.has(areaId);
     executiveAreaFilterSelect.appendChild(option);
   });
 
-  if (
-    currentValue
-    && sortedOptions.some(([areaId]) => areaId === currentValue)
-  ) {
-    executiveAreaFilterSelect.value = currentValue;
-  } else {
-    executiveAreaFilterSelect.value = "";
-    state.executiveAreaFilter = "";
-  }
+  const availableAreaIds = new Set(sortedOptions.map(([areaId]) => areaId));
+  state.executiveAreaFilters = (state.executiveAreaFilters || [])
+    .filter((areaId) => availableAreaIds.has(areaId));
+  syncExecutiveAreaFilterSelect();
+}
+
+function syncExecutiveAreaFilterSelect() {
+  const selectedAreaIds = new Set(state.executiveAreaFilters || []);
+  Array.from(executiveAreaFilterSelect.options).forEach((option) => {
+    option.selected = selectedAreaIds.has(option.value);
+  });
 }
 
 function getFilteredIndicators() {
@@ -300,8 +299,9 @@ function getFilteredIndicators() {
   }
 
   const normalizedSearch = normalizeText(state.executiveIndicatorFilter);
+  const selectedAreaIds = new Set(state.executiveAreaFilters || []);
   return state.indicators.filter((row) => {
-    const areaMatches = !state.executiveAreaFilter || row.area_id === state.executiveAreaFilter;
+    const areaMatches = selectedAreaIds.size === 0 || selectedAreaIds.has(row.area_id);
     if (!areaMatches) {
       return false;
     }
@@ -352,6 +352,9 @@ async function handleExecutiveIndicatorClick(row) {
 function renderIndicators() {
   const isExecutive = state.user && state.user.role === "executivo";
   const visibleIndicators = getFilteredIndicators();
+  const currentMonth = state.year === currentDate.getFullYear()
+    ? currentDate.getMonth() + 1
+    : null;
 
   const thead = document.createElement("thead");
   const headerRow = document.createElement("tr");
@@ -361,15 +364,16 @@ function renderIndicators() {
   indicatorHeader.textContent = "Indicador";
   headerRow.appendChild(indicatorHeader);
 
-  if (isExecutive) {
-    const areaHeader = document.createElement("th");
-    areaHeader.textContent = "Area";
-    headerRow.appendChild(areaHeader);
-  }
+  const areaHeader = document.createElement("th");
+  areaHeader.textContent = "Area";
+  headerRow.appendChild(areaHeader);
 
-  monthsLabels.forEach((label) => {
+  monthsLabels.forEach((label, index) => {
     const th = document.createElement("th");
     th.textContent = label;
+    if (currentMonth === index + 1) {
+      th.classList.add("current-month");
+    }
     headerRow.appendChild(th);
   });
 
@@ -410,14 +414,15 @@ function renderIndicators() {
     }
     tr.appendChild(indicatorCell);
 
-    if (isExecutive) {
-      const areaCell = document.createElement("td");
-      areaCell.textContent = row.area_name || row.area_id;
-      tr.appendChild(areaCell);
-    }
+    const areaCell = document.createElement("td");
+    areaCell.textContent = row.area_name || row.area_id;
+    tr.appendChild(areaCell);
 
     for (let month = 1; month <= 12; month += 1) {
       const monthCell = document.createElement("td");
+      if (currentMonth === month) {
+        monthCell.classList.add("current-month");
+      }
       const monthItem = row.months.find((item) => item.month === month);
       monthCell.appendChild(buildMonthCellContent(monthItem));
 
@@ -444,7 +449,7 @@ function renderIndicators() {
   if (visibleIndicators.length === 0) {
     const emptyRow = document.createElement("tr");
     const emptyCell = document.createElement("td");
-    emptyCell.colSpan = isExecutive ? 14 : 13;
+    emptyCell.colSpan = 14;
     emptyCell.textContent = "Nenhum indicador encontrado para o filtro selecionado.";
     emptyCell.className = "muted";
     emptyRow.appendChild(emptyCell);
@@ -752,7 +757,7 @@ function logout(showMessage = true) {
   state.indicators = [];
   state.units = [];
   state.executiveIndicatorFilter = "";
-  state.executiveAreaFilter = "";
+  state.executiveAreaFilters = [];
   state.executiveIndicatorActionMode = "none";
   localStorage.removeItem("psc_token");
   applyLoggedOutView();
@@ -867,7 +872,9 @@ executiveIndicatorFilterInput.addEventListener("input", () => {
 });
 
 executiveAreaFilterSelect.addEventListener("change", () => {
-  state.executiveAreaFilter = executiveAreaFilterSelect.value || "";
+  state.executiveAreaFilters = Array.from(executiveAreaFilterSelect.selectedOptions)
+    .map((option) => option.value)
+    .filter(Boolean);
   renderIndicators();
 });
 

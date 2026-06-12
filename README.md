@@ -67,6 +67,7 @@ Copie `.env.example` para `.env` e preencha:
 - `SUPABASE_KEY`
 - `BITRIX_WEBHOOK_URL`
 - `APP_SECRET_KEY`
+- `USER_ADMIN_PASSWORD` (senha local para o modulo separado de CRUD de usuarios)
 - `SUPABASE_USERS_URL` (opcional)
 - `SUPABASE_USERS_KEY` (opcional)
 - `SUPABASE_USERS_TABLE` (opcional, padrao: `dim_user` quando URL/KEY de usuarios forem informadas)
@@ -116,6 +117,17 @@ Opcionalmente, para desativar a tentativa de elevacao UAC no cleanup da porta:
 ```bash
 python -m app.start_server --reload --env-file .env --port 8010 --skip-uac-elevation
 ```
+
+Admin local de usuarios, separado do executavel principal:
+
+```bash
+pip install -e .
+psc-users-admin --env-file .env --port 8020
+```
+
+Abra `http://127.0.0.1:8020` e use a senha definida em `USER_ADMIN_PASSWORD`.
+Esse modulo cria/edita usuarios, redefine senha, ativa/desativa usuario, controla permissao de valor projetado e vincula gestores a multiplas areas.
+O admin tambem possui botao para encerrar o processo local.
 
 ## Endpoints principais
 
@@ -174,9 +186,45 @@ Para gerar uma versao com terminal visivel (debug):
 powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1 -Console
 ```
 
+## Build EXE do Admin de Usuarios
+
+Build do executavel separado do admin local de usuarios:
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\scripts\build_admin_exe.ps1
+```
+
+Resultado esperado:
+
+- `dist\PSC-Users-Admin.exe`
+
+Uso por duplo clique:
+
+- Dê duplo clique em `dist\PSC-Users-Admin.exe`.
+- O admin inicia na porta `8020` e abre o navegador automaticamente.
+
+Rodar o executavel:
+
+```bash
+.\dist\PSC-Users-Admin.exe --port 8020 --open-browser
+```
+
+Para não empacotar o `.env`, use:
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\scripts\build_admin_exe.ps1 -NoEnvBundle
+```
+
+Para gerar uma versao com terminal visivel (debug):
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\scripts\build_admin_exe.ps1 -Console
+```
+
 ## Regras implementadas
 
 - Gestor ve apenas indicadores da propria area.
+- Gestor pode ser vinculado a multiplas areas por `user_area_access`.
 - Executivo ve indicadores de todas as areas e pode:
   - criar plano de acao com autocomplete de usuarios do Bitrix24 e atribuicao da tarefa ao usuario selecionado;
   - cadastrar novos indicadores.
@@ -185,6 +233,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1 -Console
 - Valor mensal:
   - `sum` = soma semanal;
   - `avg` = media dos valores semanais preenchidos.
+  - `latest` = valor da ultima faixa preenchida no mes.
 
 ## Testes incluidos
 

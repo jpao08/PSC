@@ -4,7 +4,7 @@ from collections import defaultdict
 from decimal import Decimal
 
 from core.domain.models import IndicatorTableRow, User
-from core.domain.rules import calculate_monthly_value, ensure_user_active
+from core.domain.rules import calculate_monthly_value, ensure_user_active, get_user_area_ids
 from core.ports.repositories import IndicatorRepositoryPort
 
 
@@ -14,8 +14,8 @@ class ListIndicators:
 
     def execute(self, user: User, year: int) -> list[IndicatorTableRow]:
         ensure_user_active(user)
-        area_filter = user.area_id if user.role == "gestor_area" else None
-        indicators = self.indicator_repository.list_active(area_id=area_filter)
+        area_filter = get_user_area_ids(user) if user.role == "gestor_area" else None
+        indicators = self.indicator_repository.list_active(area_ids=area_filter)
         indicator_ids = [indicator.id for indicator in indicators]
         values = self.indicator_repository.list_weekly_values(
             indicator_ids=indicator_ids,

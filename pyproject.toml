@@ -25,6 +25,7 @@ dev = [
 
 [project.scripts]
 psc-start = "app.start_server:main"
+psc-users-admin = "admin.users_app:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
