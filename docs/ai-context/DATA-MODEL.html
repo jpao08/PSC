@@ -1,0 +1,271 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DATA-MODEL</title>
+  <style>
+:root {
+  color-scheme: light;
+  --bg: #f7f8fa;
+  --paper: #ffffff;
+  --text: #20242a;
+  --muted: #5f6875;
+  --border: #d8dee8;
+  --accent: #1f6feb;
+  --code-bg: #f2f5f9;
+  --table-head: #eef3f8;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", Arial, sans-serif;
+  line-height: 1.58;
+}
+main {
+  max-width: 1120px;
+  margin: 32px auto;
+  padding: 40px 48px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+}
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1.22;
+  margin: 1.45em 0 0.55em;
+}
+h1 { margin-top: 0; font-size: 2.1rem; border-bottom: 2px solid var(--border); padding-bottom: 0.45rem; }
+h2 { font-size: 1.55rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+h3 { font-size: 1.22rem; }
+p, ul, ol, table, pre { margin: 0.75rem 0 1rem; }
+ul, ol { padding-left: 1.45rem; }
+li + li { margin-top: 0.25rem; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code {
+  font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+  background: var(--code-bg);
+  padding: 0.12rem 0.28rem;
+  border-radius: 4px;
+  font-size: 0.92em;
+}
+pre {
+  overflow-x: auto;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+  border-radius: 6px;
+}
+pre code { background: transparent; padding: 0; }
+pre.mermaid {
+  background: #fff;
+  text-align: center;
+  white-space: pre-wrap;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.94rem;
+  display: block;
+  overflow-x: auto;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 0.55rem 0.65rem;
+  vertical-align: top;
+}
+th { background: var(--table-head); text-align: left; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.2rem 1rem;
+  border-left: 4px solid var(--border);
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
+.meta {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+@media print {
+  body { background: #fff; }
+  main { margin: 0; max-width: none; border: 0; padding: 22mm 18mm; }
+  table, pre { break-inside: avoid; }
+  a { color: inherit; }
+}
+</style>
+</head>
+<body>
+  <main>
+    <div class="meta">Fonte: DATA-MODEL.md - Gerado a partir de Markdown</div>
+<h1>Modelo de Dados: PSC Executavel</h1>
+<p>Data: 2026-07-11 Escopo: aplicacao executavel PSC e modulo executavel de administracao de usuarios. <code>psc-web/</code> esta fora do escopo.</p>
+<h2>Visao Geral</h2>
+<p>O PSC usa Supabase/Postgres como persistencia principal. O dominio em Python representa os dados por dataclasses em <code>src/core/domain/models.py</code>; os adapters em <code>src/adapters/output/supabase_repositories.py</code> traduzem linhas Supabase para modelos de dominio.</p>
+<p><code>sql/000_consolidated_schema.sql</code> e o schema consolidado para bancos novos conforme documentado ate migrations <code>001..023</code>. As migrations <code>024</code> e <code>025</code> adicionam campos de identidade Bitrix e permissao administrativa de usuario.</p>
+<h2>Diagrama ER</h2>
+<pre class="mermaid">erDiagram
+  ROLES ||--o{ USERS : define
+  AREAS ||--o{ USERS : area_principal
+  USERS ||--o{ USER_AREA_ACCESS : possui
+  AREAS ||--o{ USER_AREA_ACCESS : concede
+  AREAS ||--o{ INDICATORS : possui
+  USERS ||--o{ INDICATORS : cria
+  INDICATOR_UNITS ||--o{ INDICATORS : mede
+  INDICATORS ||--o{ INDICATOR_VALUES : registra
+  USERS ||--o{ INDICATOR_VALUES : informa
+  INDICATOR_VALUES ||--o{ INDICATOR_VALUE_HISTORY : audita
+  INDICATORS ||--o{ INDICATOR_MONTH_TARGETS : tem_meta
+  INDICATORS ||--o{ INDICATOR_MONTH_PROJECTIONS : tem_projecao
+  INDICATORS ||--o{ INDICATOR_MONTH_NOT_APPLICABLE : marca_na
+  INDICATORS ||--o{ ACTION_PLANS : possui
+  ACTION_PLANS ||--o{ ACTION_PLAN_HISTORY : registra
+  USERS ||--o{ ACTION_PLANS : cria
+  USERS ||--o{ ISSUE_REPORTS : solicita
+  AREAS ||--o{ ISSUE_REPORTS : classifica
+  USERS ||--o{ ISSUE_REPORTS : revisa
+  ISSUE_REPORTS ||--o{ ISSUE_REPORT_TAGS : recebe
+  ISSUE_TAGS ||--o{ ISSUE_REPORT_TAGS : categoriza</pre>
+<h2>Entidades Principais</h2>
+<h3>Role</h3>
+<ul>
+<li>Tabela: <code>roles</code></li>
+<li>Modelo: literal <code>Role</code> em <code>models.py</code></li>
+<li>Codigos observados: <code>gestor_area</code>, <code>executivo</code>, <code>executivo_visualizacao</code></li>
+<li>Funcao: base para autorizacao.</li>
+</ul>
+<h3>User</h3>
+<ul>
+<li>Tabela: <code>users</code></li>
+<li>Modelo: <code>User</code></li>
+<li>Campos principais: <code>email</code>, <code>password_hash</code>, <code>name</code>, <code>role</code>, <code>area_id</code>, <code>is_active</code>, <code>can_edit_projected_value</code>, <code>can_use_issue_reports</code></li>
+<li>Campos adicionados por migrations recentes: <code>bitrix_user_id</code>, <code>bitrix_portal_domain</code>, <code>last_login_at</code>, <code>can_admin_users</code></li>
+<li>Relacionamentos:</li>
+<li><code>role</code> referencia <code>roles.code</code></li>
+<li><code>area_id</code> referencia opcionalmente <code>areas.id</code></li>
+<li>multiplas areas via <code>user_area_access</code></li>
+<li>Ciclo de vida:</li>
+<li>Criado, editado e desativado pelo executavel admin.</li>
+<li>Autenticacao exige hash valido e usuario ativo.</li>
+</ul>
+<h3>Area</h3>
+<ul>
+<li>Tabela: <code>areas</code></li>
+<li>Modelo: <code>Area</code></li>
+<li>Campos: <code>name</code>, <code>hex_color</code>, <code>is_active</code></li>
+<li>Ciclo de vida:</li>
+<li>Executivo cria, edita e desativa.</li>
+<li>Desativacao usa <code>is_active</code>, nao remocao fisica.</li>
+</ul>
+<h3>IndicatorUnit</h3>
+<ul>
+<li>Tabela: <code>indicator_units</code></li>
+<li>Modelo: <code>IndicatorUnit</code></li>
+<li>Funcao: normalizar unidade de medida exibida no indicador.</li>
+</ul>
+<h3>Indicator</h3>
+<ul>
+<li>Tabela: <code>indicators</code></li>
+<li>Modelos: <code>Indicator</code>, <code>NewIndicator</code>, <code>IndicatorTableRow</code></li>
+<li>Campos: <code>area_id</code>, <code>name</code>, <code>description</code>, <code>aggregation_type</code>, <code>unit_id</code>, <code>unit</code>, <code>maturity_level</code>, <code>is_active</code>, <code>created_by</code></li>
+<li>Regras:</li>
+<li><code>aggregation_type</code> deve ser <code>sum</code>, <code>avg</code> ou <code>latest</code></li>
+<li><code>maturity_level</code> deve estar entre 0 e 100 quando informado</li>
+<li>Ciclo de vida:</li>
+<li>Executivo cria e edita.</li>
+<li>Delete observado remove dependencias como planos, historico, valores, metas, projecoes e marcacoes antes de excluir indicador.</li>
+</ul>
+<h3>IndicatorValue</h3>
+<ul>
+<li>Tabela: <code>indicator_values</code></li>
+<li>Modelo: <code>IndicatorValue</code></li>
+<li>Campos: <code>indicator_id</code>, <code>year</code>, <code>month</code>, <code>week_number</code>, <code>value</code>, <code>source_user_id</code></li>
+<li>Unicidade: <code>indicator_id + year + month + week_number</code></li>
+<li>Ciclo de vida:</li>
+<li>Gestor atualiza para indicadores das suas areas.</li>
+<li>Alteracao de valor existente gera <code>indicator_value_history</code>.</li>
+</ul>
+<h3>IndicatorValueHistory</h3>
+<ul>
+<li>Tabela: <code>indicator_value_history</code></li>
+<li>Funcao: auditar alteracoes de valores semanais.</li>
+<li>Criacao: ocorre quando um upsert altera valor existente para valor diferente.</li>
+</ul>
+<h3>Planejamento Mensal</h3>
+<ul>
+<li><code>indicator_month_targets</code>: metas mensais definidas por executivo; nao podem ser negativas.</li>
+<li><code>indicator_month_projections</code>: projecoes mensais definidas por usuarios com permissao; podem ser negativas.</li>
+<li><code>indicator_month_not_applicable</code>: marca que o mes de um indicador nao se aplica; oculta valor real mensal sem apagar meta/projecao.</li>
+</ul>
+<h3>ActionPlan</h3>
+<ul>
+<li>Tabelas: <code>action_plans</code>, <code>action_plan_history</code></li>
+<li>Modelos: <code>ActionPlan</code>, <code>NewActionPlan</code>, <code>ActionPlanHistoryEvent</code></li>
+<li>Campos: <code>indicator_id</code>, <code>title</code>, <code>ocorrencia</code>, <code>identificacao_causa</code>, <code>proposta_solucao</code>, <code>bitrix_responsible_id</code>, <code>responsible_name</code>, <code>responsible_email</code>, <code>due_date</code>, <code>bitrix_task_id</code>, <code>status</code>, <code>created_by</code></li>
+<li>Ciclo de vida:</li>
+<li>Executivo cria.</li>
+<li>Gateway pode criar tarefa Bitrix e salvar ID retornado.</li>
+<li>Historico registra eventos do plano.</li>
+</ul>
+<h3>IssueReport</h3>
+<ul>
+<li>Tabelas: <code>issue_reports</code>, <code>issue_tags</code>, <code>issue_report_tags</code></li>
+<li>Modelos: <code>IssueReport</code>, <code>NewIssueReport</code>, <code>IssueTag</code></li>
+<li>Grupos de campos:</li>
+<li>Solicitante: <code>requester_id</code>, <code>requester_gravity</code>, <code>requester_urgency</code>, <code>requester_tendency</code>, <code>requester_priority_score</code></li>
+<li>Revisao executiva: <code>executive_gravity</code>, <code>executive_urgency</code>, <code>executive_tendency</code>, <code>executive_priority_score</code>, <code>reviewed_by</code>, <code>reviewed_at</code></li>
+<li>Classificacao: <code>area_id</code>, <code>is_other_area</code>, <code>status</code>, tags</li>
+<li>Narrativa: <code>ocorrencia</code>, <code>identificacao_causa</code>, <code>proposta_solucao</code></li>
+<li>Ciclo de vida:</li>
+<li>Criado por executivo ou usuario com <code>can_use_issue_reports</code>.</li>
+<li>Listagem nao executiva e limitada ao solicitante.</li>
+<li>Executivo revisa, altera status/GUT, gerencia tags e faz soft delete.</li>
+</ul>
+<h2>Modelos de Entrada/API</h2>
+<p>Payloads da API principal em <code>src/adapters/input/api_routes.py</code>:</p>
+<ul>
+<li><code>LoginRequest</code></li>
+<li><code>WeeklyValuePayload</code></li>
+<li><code>ActionPlanPayload</code></li>
+<li><code>CreateIndicatorPayload</code></li>
+<li><code>UpdateIndicatorPayload</code></li>
+<li><code>AreaPayload</code></li>
+<li><code>MonthlyTargetPayload</code></li>
+<li><code>MonthlyProjectionPayload</code></li>
+<li><code>MonthlyNotApplicablePayload</code></li>
+<li><code>CreateIssueReportPayload</code></li>
+<li><code>IssueExecutiveReviewPayload</code></li>
+<li><code>IssueTagPayload</code></li>
+<li><code>IssueTagsPayload</code></li>
+</ul>
+<p>Payloads do admin em <code>src/admin/users_app.py</code>:</p>
+<ul>
+<li><code>AdminLoginPayload</code></li>
+<li><code>AdminUserPayload</code></li>
+</ul>
+<h2>Estados e Ciclos de Vida</h2>
+<ul>
+<li>Token de auth e stateless: contem sujeito e expiracao assinados por HMAC.</li>
+<li>Sessao de UI fica em <code>localStorage</code> como <code>psc_token</code> ou <code>psc_users_admin_token</code>.</li>
+<li>Issue Reports usam soft delete com <code>is_deleted</code>, <code>deleted_at</code> e <code>deleted_by</code>.</li>
+<li>Areas e tags sao desativadas por <code>is_active</code>.</li>
+<li>Indicadores sao excluidos fisicamente apos limpeza manual de dependencias.</li>
+<li><code>can_admin_users</code> existe no schema incremental, mas nao foi observado como autorizador no app admin atual.</li>
+</ul>
+<h2>Evidencias</h2>
+<ul>
+<li>Dominio: <code>src/core/domain/models.py</code></li>
+<li>Regras: <code>src/core/domain/rules.py</code></li>
+<li>Persistencia: <code>src/adapters/output/supabase_repositories.py</code></li>
+<li>Admin: <code>src/admin/users_app.py</code></li>
+<li>SQL: <code>sql/000_consolidated_schema.sql</code>, <code>sql/022_issue_fields_na_and_viewer_role.sql</code>, <code>sql/023_issue_report_tags.sql</code>, <code>sql/024_add_bitrix_identity_to_users.sql</code>, <code>sql/025_add_user_admin_permission.sql</code></li>
+</ul>
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true, securityLevel: 'loose' });
+  </script>
+</body>
+</html>
+

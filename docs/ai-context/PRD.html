@@ -1,0 +1,538 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PRD</title>
+  <style>
+:root {
+  color-scheme: light;
+  --bg: #f7f8fa;
+  --paper: #ffffff;
+  --text: #20242a;
+  --muted: #5f6875;
+  --border: #d8dee8;
+  --accent: #1f6feb;
+  --code-bg: #f2f5f9;
+  --table-head: #eef3f8;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", Arial, sans-serif;
+  line-height: 1.58;
+}
+main {
+  max-width: 1120px;
+  margin: 32px auto;
+  padding: 40px 48px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+}
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1.22;
+  margin: 1.45em 0 0.55em;
+}
+h1 { margin-top: 0; font-size: 2.1rem; border-bottom: 2px solid var(--border); padding-bottom: 0.45rem; }
+h2 { font-size: 1.55rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+h3 { font-size: 1.22rem; }
+p, ul, ol, table, pre { margin: 0.75rem 0 1rem; }
+ul, ol { padding-left: 1.45rem; }
+li + li { margin-top: 0.25rem; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code {
+  font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+  background: var(--code-bg);
+  padding: 0.12rem 0.28rem;
+  border-radius: 4px;
+  font-size: 0.92em;
+}
+pre {
+  overflow-x: auto;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+  border-radius: 6px;
+}
+pre code { background: transparent; padding: 0; }
+pre.mermaid {
+  background: #fff;
+  text-align: center;
+  white-space: pre-wrap;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.94rem;
+  display: block;
+  overflow-x: auto;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 0.55rem 0.65rem;
+  vertical-align: top;
+}
+th { background: var(--table-head); text-align: left; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.2rem 1rem;
+  border-left: 4px solid var(--border);
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
+.meta {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+@media print {
+  body { background: #fff; }
+  main { margin: 0; max-width: none; border: 0; padding: 22mm 18mm; }
+  table, pre { break-inside: avoid; }
+  a { color: inherit; }
+}
+</style>
+</head>
+<body>
+  <main>
+    <div class="meta">Fonte: PRD.md - Gerado a partir de Markdown</div>
+<h1>PRD: PSC Executavel</h1>
+<p>Data: 2026-07-11 Escopo: aplicacao executavel PSC e modulo executavel de administracao de usuarios. <code>psc-web/</code> esta fora do escopo.</p>
+<h2>1. Resumo do Produto</h2>
+<p>O PSC e uma aplicacao local empacotavel como executavel Windows para gestao de indicadores por area. O usuario abre <code>PSC.exe</code>, que inicia um servidor FastAPI local, serve uma UI estatica em navegador a partir de <code>web/</code>, persiste dados no Supabase e integra com Bitrix24 para criacao de tarefas em planos de acao.</p>
+<p>O projeto tambem possui um executavel separado, <code>PSC-Users-Admin.exe</code>, para administracao local de usuarios, permissoes e vinculos com areas usando <code>admin_web/</code>.</p>
+<h2>2. Personas e Papeis</h2>
+<table>
+<thead><tr>
+<th>Papel</th>
+<th>Descricao implementada</th>
+<th>Evidencia</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>gestor_area</code></td>
+<td>Visualiza indicadores das areas vinculadas, atualiza valores semanais, marca mes como nao aplicavel e pode usar Issue Reports se tiver permissao.</td>
+<td><code>src/core/domain/rules.py</code>, <code>src/core/use_cases/register_indicator_value.py</code>, <code>src/core/use_cases/set_indicator_month_not_applicable.py</code>, <code>tests/test_use_case.py</code></td>
+</tr>
+<tr>
+<td><code>executivo</code></td>
+<td>Tem visao global e permissoes de gestao: areas, indicadores, metas, planos de acao, Issue Reports, tags e busca de usuarios Bitrix.</td>
+<td><code>src/adapters/input/api_routes.py</code>, <code>src/core/use_cases/create_indicator.py</code>, <code>src/core/use_cases/create_area.py</code>, <code>src/core/use_cases/create_action_plan.py</code></td>
+</tr>
+<tr>
+<td><code>executivo_visualizacao</code></td>
+<td>Papel executivo de visualizacao; lista todos os indicadores e pode acessar Issue Reports se <code>can_use_issue_reports</code> permitir, mas nao cria indicadores.</td>
+<td><code>src/core/domain/models.py</code>, <code>src/core/domain/rules.py</code>, <code>tests/test_use_case.py</code>, <code>tests/test_issue_reports.py</code></td>
+</tr>
+<tr>
+<td>Admin local</td>
+<td>Usa o executavel administrativo com <code>USER_ADMIN_PASSWORD</code> para criar, editar, desativar usuarios e vincular areas.</td>
+<td><code>src/admin/users_app.py</code>, <code>admin_web/app.js</code>, <code>tests/test_admin_users.py</code></td>
+</tr>
+</tbody></table>
+<h2>3. Requisitos Funcionais Implementados</h2>
+<table>
+<thead><tr>
+<th>ID</th>
+<th>Requisito</th>
+<th>Status</th>
+<th>Evidencia</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>RF-001</td>
+<td>Autenticar usuario por login/email e senha, retornando bearer token.</td>
+<td>Implementado</td>
+<td><code>POST /api/login</code>, <code>AuthenticateUser</code>, <code>SimpleTokenService</code></td>
+</tr>
+<tr>
+<td>RF-002</td>
+<td>Retornar dados do usuario atual, incluindo role, areas e flags de permissao.</td>
+<td>Implementado</td>
+<td><code>GET /api/me</code>, <code>_serialize_user</code></td>
+</tr>
+<tr>
+<td>RF-003</td>
+<td>Listar indicadores por ano, respeitando papel e areas vinculadas.</td>
+<td>Implementado</td>
+<td><code>GET /api/indicators</code>, <code>ListIndicators</code>, <code>tests/test_list_indicators_order.py</code></td>
+</tr>
+<tr>
+<td>RF-004</td>
+<td>Calcular valor mensal por <code>sum</code>, media ponderada <code>avg</code> ou ultimo valor <code>latest</code>.</td>
+<td>Implementado</td>
+<td><code>calculate_monthly_value</code>, <code>tests/test_rules.py</code></td>
+</tr>
+<tr>
+<td>RF-005</td>
+<td>Listar quatro faixas mensais e valores semanais de um indicador/mes.</td>
+<td>Implementado</td>
+<td><code>GET /api/indicators/{indicator_id}/weekly-values</code>, <code>get_month_ranges</code></td>
+</tr>
+<tr>
+<td>RF-006</td>
+<td>Permitir que gestor atualize valores semanais de indicadores das suas areas.</td>
+<td>Implementado</td>
+<td><code>POST /api/indicators/{indicator_id}/weekly-values</code>, <code>RegisterIndicatorValue</code></td>
+</tr>
+<tr>
+<td>RF-007</td>
+<td>Registrar historico quando um valor semanal existente muda.</td>
+<td>Implementado</td>
+<td><code>SupabaseIndicatorRepository.upsert_weekly_value</code>, tabela <code>indicator_value_history</code></td>
+</tr>
+<tr>
+<td>RF-008</td>
+<td>Permitir que executivo crie, edite e exclua indicadores.</td>
+<td>Implementado</td>
+<td><code>POST/PUT/DELETE /api/indicators</code>, use cases de indicador</td>
+</tr>
+<tr>
+<td>RF-009</td>
+<td>Permitir que executivo crie, edite e desative areas com cor opcional.</td>
+<td>Implementado</td>
+<td><code>POST/PUT/DELETE /api/areas</code>, use cases de area</td>
+</tr>
+<tr>
+<td>RF-010</td>
+<td>Permitir que executivo liste unidades de indicadores.</td>
+<td>Implementado</td>
+<td><code>GET /api/indicator-units</code>, tabela <code>indicator_units</code></td>
+</tr>
+<tr>
+<td>RF-011</td>
+<td>Permitir que executivo crie planos de acao vinculados a indicadores.</td>
+<td>Implementado</td>
+<td><code>POST /api/action-plans</code>, <code>CreateActionPlan</code></td>
+</tr>
+<tr>
+<td>RF-012</td>
+<td>Criar tarefa no Bitrix24 ao criar plano de acao, quando webhook estiver configurado.</td>
+<td>Implementado</td>
+<td><code>BitrixTaskGateway</code>, <code>BitrixClient</code></td>
+</tr>
+<tr>
+<td>RF-013</td>
+<td>Buscar usuarios Bitrix para autocomplete, usando diretorio Supabase opcional antes do fallback Bitrix.</td>
+<td>Implementado</td>
+<td><code>GET /api/bitrix-users</code>, <code>SupabaseBitrixUserDirectory</code>, <code>BitrixClient</code></td>
+</tr>
+<tr>
+<td>RF-014</td>
+<td>Permitir meta mensal para executivo, com criacao/atualizacao/exclusao por valor vazio.</td>
+<td>Implementado</td>
+<td><code>POST /api/indicators/{indicator_id}/monthly-target</code>, <code>UpsertIndicatorMonthTarget</code></td>
+</tr>
+<tr>
+<td>RF-015</td>
+<td>Permitir valor projetado mensal para usuarios com <code>can_edit_projected_value</code>.</td>
+<td>Implementado</td>
+<td><code>POST /api/indicators/{indicator_id}/monthly-projection</code>, <code>UpsertIndicatorMonthProjection</code></td>
+</tr>
+<tr>
+<td>RF-016</td>
+<td>Permitir marcar mes como nao aplicavel para indicador da area do gestor.</td>
+<td>Implementado</td>
+<td><code>POST /api/indicators/{indicator_id}/monthly-na</code>, <code>SetIndicatorMonthNotApplicable</code></td>
+</tr>
+<tr>
+<td>RF-017</td>
+<td>Permitir criacao de Issue Reports para executivo ou usuario com <code>can_use_issue_reports</code>.</td>
+<td>Implementado</td>
+<td><code>POST /api/issue-reports</code>, <code>CreateIssueReport</code></td>
+</tr>
+<tr>
+<td>RF-018</td>
+<td>Listar Issue Reports globalmente para executivo e apenas do solicitante para nao executivo.</td>
+<td>Implementado</td>
+<td><code>ListIssueReports</code>, <code>tests/test_issue_reports.py</code></td>
+</tr>
+<tr>
+<td>RF-019</td>
+<td>Permitir revisao executiva de Issue Report com GUT executivo e status.</td>
+<td>Implementado</td>
+<td><code>PATCH /api/issue-reports/{issue_id}/executive-review</code></td>
+</tr>
+<tr>
+<td>RF-020</td>
+<td>Permitir soft delete de Issue Reports por executivo.</td>
+<td>Implementado</td>
+<td><code>DELETE /api/issue-reports/{issue_id}</code>, <code>soft_delete_issue_report</code></td>
+</tr>
+<tr>
+<td>RF-021</td>
+<td>Permitir gestao de tags de Issue Reports por executivo.</td>
+<td>Implementado</td>
+<td><code>/api/issue-tags</code>, <code>/api/issue-reports/{issue_id}/tags</code></td>
+</tr>
+<tr>
+<td>RF-022</td>
+<td>Permitir encerramento local do app pela UI autenticada.</td>
+<td>Implementado</td>
+<td><code>POST /api/system/shutdown</code>, <code>web/app.js</code></td>
+</tr>
+<tr>
+<td>RF-023</td>
+<td>Fornecer executavel admin para listar areas/usuarios, criar/editar/desativar usuarios e vincular multiplas areas.</td>
+<td>Implementado</td>
+<td><code>src/admin/users_app.py</code>, <code>admin_web/app.js</code></td>
+</tr>
+<tr>
+<td>RF-024</td>
+<td>Gerar executaveis one-file Windows para app principal e admin.</td>
+<td>Implementado</td>
+<td><code>scripts/build_exe.ps1</code>, <code>scripts/build_admin_exe.ps1</code>, specs PyInstaller</td>
+</tr>
+</tbody></table>
+<h2>4. Requisitos Nao Funcionais Implementados</h2>
+<table>
+<thead><tr>
+<th>ID</th>
+<th>Requisito</th>
+<th>Status</th>
+<th>Evidencia</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>RNF-001</td>
+<td>Arquitetura Modular Factory/Core-first com separacao entre core, adapters, infra e app.</td>
+<td>Implementado estruturalmente</td>
+<td><code>src/core</code>, <code>src/adapters</code>, <code>src/infra</code>, <code>src/app/wiring.py</code></td>
+</tr>
+<tr>
+<td>RNF-002</td>
+<td>Executavel deve iniciar servidor local, limpar porta ocupada e abrir navegador automaticamente.</td>
+<td>Implementado</td>
+<td><code>src/app/start_server.py</code></td>
+</tr>
+<tr>
+<td>RNF-003</td>
+<td>Build padrao deve gerar executavel sem terminal para duplo clique.</td>
+<td>Implementado</td>
+<td><code>scripts/build_exe.ps1</code>, <code>scripts/build_admin_exe.ps1</code></td>
+</tr>
+<tr>
+<td>RNF-004</td>
+<td>App deve carregar <code>.env</code> local e, em modo frozen, tambem <code>.env</code> empacotado quando existir.</td>
+<td>Implementado</td>
+<td><code>src/infra/config.py</code>, specs/scripts PyInstaller</td>
+</tr>
+<tr>
+<td>RNF-005</td>
+<td>Tokens de sessao devem ser assinados por HMAC e expirar por TTL.</td>
+<td>Implementado</td>
+<td><code>SimpleTokenService</code></td>
+</tr>
+<tr>
+<td>RNF-006</td>
+<td>Senhas de usuarios devem ser armazenadas com hash PBKDF2-SHA256.</td>
+<td>Implementado</td>
+<td><code>hash_password</code>, <code>verify_password</code></td>
+</tr>
+<tr>
+<td>RNF-007</td>
+<td>Dependencias externas devem ficar atras de ports/adapters.</td>
+<td>Implementado</td>
+<td><code>core/ports</code>, <code>adapters/output</code>, <code>infra</code></td>
+</tr>
+<tr>
+<td>RNF-008</td>
+<td>Testes devem cobrir calculos, autorizacao, gateway Bitrix, Issue Reports e admin.</td>
+<td>Implementado</td>
+<td><code>tests/</code></td>
+</tr>
+</tbody></table>
+<h2>5. Regras de Negocio Implementadas</h2>
+<table>
+<thead><tr>
+<th>Regra</th>
+<th>Descricao</th>
+<th>Evidencia</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>RN-001</td>
+<td>Usuario inativo nao autentica e nao usa operacoes protegidas.</td>
+<td><code>ensure_user_active</code></td>
+</tr>
+<tr>
+<td>RN-002</td>
+<td>Gestor atualiza valor semanal apenas de indicadores das suas areas.</td>
+<td><code>ensure_indicator_in_user_area</code>, testes</td>
+</tr>
+<tr>
+<td>RN-003</td>
+<td>Executivo e <code>executivo_visualizacao</code> visualizam todos os indicadores; gestor ve areas vinculadas.</td>
+<td><code>ensure_can_view_indicator</code>, <code>ListIndicators</code></td>
+</tr>
+<tr>
+<td>RN-004</td>
+<td>Mes e dividido em quatro faixas: 1-7, 8-14, 15-21, 22-ultimo dia.</td>
+<td><code>get_month_ranges</code>, migration <code>013</code></td>
+</tr>
+<tr>
+<td>RN-005</td>
+<td>Agregacao <code>avg</code> e ponderada pelos dias de cada faixa preenchida.</td>
+<td><code>calculate_monthly_value</code>, testes</td>
+</tr>
+<tr>
+<td>RN-006</td>
+<td>Agregacao <code>latest</code> usa a ultima faixa preenchida no mes.</td>
+<td><code>calculate_monthly_value</code>, testes</td>
+</tr>
+<tr>
+<td>RN-007</td>
+<td>Tipo de agregacao deve ser <code>sum</code>, <code>avg</code> ou <code>latest</code>.</td>
+<td><code>ensure_valid_aggregation</code>, SQL</td>
+</tr>
+<tr>
+<td>RN-008</td>
+<td>Maturidade do indicador deve estar entre 0 e 100.</td>
+<td><code>ensure_maturity_level</code>, SQL</td>
+</tr>
+<tr>
+<td>RN-009</td>
+<td>Cores de area e tag devem seguir <code>#RRGGBB</code>.</td>
+<td><code>ensure_hex_color_or_none</code>, SQL</td>
+</tr>
+<tr>
+<td>RN-010</td>
+<td>Nome ativo de indicador nao deve duplicar outro indicador ativo.</td>
+<td><code>exists_active_name</code>, use cases</td>
+</tr>
+<tr>
+<td>RN-011</td>
+<td>Nome ativo de area nao deve duplicar outra area ativa.</td>
+<td><code>exists_active_area_name</code>, SQL</td>
+</tr>
+<tr>
+<td>RN-012</td>
+<td>Meta mensal nao pode ser negativa.</td>
+<td><code>UpsertIndicatorMonthTarget</code></td>
+</tr>
+<tr>
+<td>RN-013</td>
+<td>Valor projetado mensal pode ser negativo, mas exige permissao <code>can_edit_projected_value</code>.</td>
+<td><code>UpsertIndicatorMonthProjection</code>, testes</td>
+</tr>
+<tr>
+<td>RN-014</td>
+<td>Valores GUT de Issue Report devem estar entre 1 e 5.</td>
+<td><code>ensure_issue_gut_value</code></td>
+</tr>
+<tr>
+<td>RN-015</td>
+<td>Scores de prioridade de Issue Report sao derivados de GUT.</td>
+<td><code>CreateIssueReport</code>, <code>UpdateIssueReportExecutiveReview</code>, testes</td>
+</tr>
+<tr>
+<td>RN-016</td>
+<td>Atualizacao de GUT executivo exige os tres valores juntos.</td>
+<td><code>UpdateIssueReportExecutiveReview</code>, testes</td>
+</tr>
+<tr>
+<td>RN-017</td>
+<td>Status de Issue Report deve pertencer ao conjunto fixo de status em portugues.</td>
+<td><code>IssueStatus</code>, <code>ensure_issue_status</code></td>
+</tr>
+<tr>
+<td>RN-018</td>
+<td>Issue Report e excluido logicamente, nao removido fisicamente.</td>
+<td><code>soft_delete_issue_report</code>, SQL</td>
+</tr>
+<tr>
+<td>RN-019</td>
+<td>Criacao de usuario admin exige senha; update so troca hash se senha for informada.</td>
+<td><code>AdminUserRepository</code></td>
+</tr>
+<tr>
+<td>RN-020</td>
+<td>Vinculos usuario-area sao deduplicados em <code>user_area_access</code>; primeira area tambem fica em <code>users.area_id</code>.</td>
+<td><code>AdminUserRepository.replace_user_areas</code></td>
+</tr>
+</tbody></table>
+<h2>6. Fluxos Principais</h2>
+<ol>
+<li>Usuario inicia <code>PSC.exe</code>.</li>
+<li>Launcher limpa porta <code>8010</code> se necessario, inicia FastAPI e abre navegador.</li>
+<li>Usuario autentica e recebe token.</li>
+<li>UI carrega indicadores do ano selecionado.</li>
+<li>Gestor registra valores semanais dos indicadores das suas areas.</li>
+<li>Executivo gerencia areas, indicadores, metas, planos de acao, Issue Reports e tags.</li>
+<li>Plano de acao pode buscar responsavel e criar tarefa no Bitrix24.</li>
+<li>Usuario encerra app pelo botao de shutdown.</li>
+<li>Admin inicia <code>PSC-Users-Admin.exe</code>, autentica com senha local e gerencia usuarios/permissoes.</li>
+</ol>
+<h2>7. Fora do Escopo Deste PRD</h2>
+<ul>
+<li>Implementacao, requisitos e arquitetura de <code>psc-web/</code>.</li>
+<li>Frontend hospedado em nuvem que possa substituir a UI estatica do executavel.</li>
+<li>Validacao em ambiente real de Supabase ou Bitrix24.</li>
+<li>Deploy de producao alem do executavel local Windows.</li>
+</ul>
+<h2>8. Riscos e Perguntas Abertas</h2>
+<ul>
+<li>Os scripts PyInstaller empacotam <code>.env</code> por padrao quando ele existe. Isso simplifica uso local, mas aumenta risco de distribuicao com segredo.</li>
+<li><code>sql/000_consolidated_schema.sql</code> parece consolidado ate migration <code>023</code>; <code>024</code> e <code>025</code> podem precisar entrar no consolidado.</li>
+<li><code>can_admin_users</code> existe em SQL, mas o admin observado usa <code>USER_ADMIN_PASSWORD</code>; confirmar se a permissao sera usada futuramente.</li>
+<li>O repositorio tinha mudancas nao commitadas antes da atualizacao dos documentos. Esta analise reflete a arvore de trabalho atual.</li>
+</ul>
+<h2>9. Evidencias Principais</h2>
+<table>
+<thead><tr>
+<th>Area</th>
+<th>Evidencia</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Entrada do app</td>
+<td><code>src/app/main.py</code>, <code>src/app/start_server.py</code>, <code>PSC.spec</code></td>
+</tr>
+<tr>
+<td>Composicao</td>
+<td><code>src/app/wiring.py</code></td>
+</tr>
+<tr>
+<td>API</td>
+<td><code>src/adapters/input/api_routes.py</code></td>
+</tr>
+<tr>
+<td>Dominio</td>
+<td><code>src/core/domain/models.py</code>, <code>src/core/domain/rules.py</code></td>
+</tr>
+<tr>
+<td>Casos de uso</td>
+<td><code>src/core/use_cases/</code></td>
+</tr>
+<tr>
+<td>Persistencia</td>
+<td><code>src/adapters/output/supabase_repositories.py</code>, <code>sql/</code></td>
+</tr>
+<tr>
+<td>Bitrix24</td>
+<td><code>src/adapters/output/bitrix_task_gateway.py</code>, <code>src/infra/bitrix_client.py</code></td>
+</tr>
+<tr>
+<td>UI executavel</td>
+<td><code>web/</code></td>
+</tr>
+<tr>
+<td>Admin executavel</td>
+<td><code>src/admin/users_app.py</code>, <code>admin_web/</code>, <code>PSC-Users-Admin.spec</code></td>
+</tr>
+<tr>
+<td>Testes</td>
+<td><code>tests/</code></td>
+</tr>
+</tbody></table>
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true, securityLevel: 'loose' });
+  </script>
+</body>
+</html>
+

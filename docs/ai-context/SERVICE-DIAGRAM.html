@@ -1,0 +1,260 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SERVICE-DIAGRAM</title>
+  <style>
+:root {
+  color-scheme: light;
+  --bg: #f7f8fa;
+  --paper: #ffffff;
+  --text: #20242a;
+  --muted: #5f6875;
+  --border: #d8dee8;
+  --accent: #1f6feb;
+  --code-bg: #f2f5f9;
+  --table-head: #eef3f8;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", Arial, sans-serif;
+  line-height: 1.58;
+}
+main {
+  max-width: 1120px;
+  margin: 32px auto;
+  padding: 40px 48px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+}
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1.22;
+  margin: 1.45em 0 0.55em;
+}
+h1 { margin-top: 0; font-size: 2.1rem; border-bottom: 2px solid var(--border); padding-bottom: 0.45rem; }
+h2 { font-size: 1.55rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+h3 { font-size: 1.22rem; }
+p, ul, ol, table, pre { margin: 0.75rem 0 1rem; }
+ul, ol { padding-left: 1.45rem; }
+li + li { margin-top: 0.25rem; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code {
+  font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+  background: var(--code-bg);
+  padding: 0.12rem 0.28rem;
+  border-radius: 4px;
+  font-size: 0.92em;
+}
+pre {
+  overflow-x: auto;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+  border-radius: 6px;
+}
+pre code { background: transparent; padding: 0; }
+pre.mermaid {
+  background: #fff;
+  text-align: center;
+  white-space: pre-wrap;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.94rem;
+  display: block;
+  overflow-x: auto;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 0.55rem 0.65rem;
+  vertical-align: top;
+}
+th { background: var(--table-head); text-align: left; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.2rem 1rem;
+  border-left: 4px solid var(--border);
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
+.meta {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+@media print {
+  body { background: #fff; }
+  main { margin: 0; max-width: none; border: 0; padding: 22mm 18mm; }
+  table, pre { break-inside: avoid; }
+  a { color: inherit; }
+}
+</style>
+</head>
+<body>
+  <main>
+    <div class="meta">Fonte: SERVICE-DIAGRAM.md - Gerado a partir de Markdown</div>
+<h1>Diagrama de Servicos: PSC Executavel</h1>
+<p>Data: 2026-07-11 Escopo: aplicacao executavel PSC e modulo executavel de administracao de usuarios. <code>psc-web/</code> esta fora do escopo.</p>
+<h2>Executavel Principal</h2>
+<pre class="mermaid">flowchart LR
+  Usuario[Usuario no navegador] --&gt; UI[UI estatica: web/]
+  UI --&gt; API[FastAPI API: src/adapters/input/api_routes.py]
+  API --&gt; Container[Composition Root: src/app/wiring.py]
+  Container --&gt; UseCases[Casos de uso: src/core/use_cases]
+  UseCases --&gt; Domain[Dominio e regras: src/core/domain]
+  UseCases --&gt; Ports[Ports: repositories e task_gateway]
+  Ports --&gt; SupaRepo[Adapters Supabase]
+  Ports --&gt; BitrixGateway[Adapter BitrixTaskGateway]
+  SupaRepo --&gt; Supabase[(Supabase/Postgres)]
+  BitrixGateway --&gt; UserDirectory[Diretorio opcional Supabase de usuarios]
+  BitrixGateway --&gt; Bitrix[(Bitrix24 Webhook API)]
+  API --&gt; Shutdown[Encerramento local do processo]
+  Launcher[PSC.exe / app.start_server] --&gt; API
+  Launcher --&gt; UI</pre>
+<h2>Executavel Administrativo</h2>
+<pre class="mermaid">flowchart LR
+  Admin[Administrador local] --&gt; AdminUI[UI estatica admin: admin_web/]
+  AdminUI --&gt; AdminAPI[FastAPI Admin: src/admin/users_app.py]
+  AdminAPI --&gt; AdminRepo[AdminUserRepository]
+  AdminAPI --&gt; Token[SimpleTokenService]
+  AdminRepo --&gt; Supabase[(Supabase/Postgres)]
+  AdminAPI --&gt; AdminShutdown[Encerramento local do admin]
+  AdminLauncher[PSC-Users-Admin.exe] --&gt; AdminAPI
+  AdminLauncher --&gt; AdminUI</pre>
+<h2>Fluxo de Build</h2>
+<pre class="mermaid">flowchart LR
+  Source[Codigo-fonte] --&gt; BuildMain[scripts/build_exe.ps1]
+  Source --&gt; BuildAdmin[scripts/build_admin_exe.ps1]
+  BuildMain --&gt; PyInstallerMain[PyInstaller onefile principal]
+  BuildAdmin --&gt; PyInstallerAdmin[PyInstaller onefile admin]
+  PyInstallerMain --&gt; MainExe[dist/PSC.exe]
+  PyInstallerAdmin --&gt; AdminExe[dist/PSC-Users-Admin.exe]
+  Web[web/] --&gt; PyInstallerMain
+  AdminWeb[admin_web/] --&gt; PyInstallerAdmin
+  Env[.env opcional] --&gt; PyInstallerMain
+  Env --&gt; PyInstallerAdmin</pre>
+<h2>Responsabilidades por Servico/Modulo</h2>
+<table>
+<thead><tr>
+<th>Modulo</th>
+<th>Responsabilidade</th>
+<th>Evidencia</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><code>src/app/start_server.py</code></td>
+<td>Launcher CLI/executavel, limpeza de porta, abertura de navegador, startup Uvicorn e suporte a PyInstaller frozen.</td>
+<td><code>src/app/start_server.py</code></td>
+</tr>
+<tr>
+<td><code>src/app/main.py</code></td>
+<td>Fabrica FastAPI, registra rotas, serve <code>web/</code> e expÃµe healthcheck.</td>
+<td><code>src/app/main.py</code></td>
+</tr>
+<tr>
+<td><code>src/app/wiring.py</code></td>
+<td>Composition root do executavel principal; instancia settings, clients, repositories, gateways e use cases.</td>
+<td><code>src/app/wiring.py</code></td>
+</tr>
+<tr>
+<td><code>src/adapters/input/api_routes.py</code></td>
+<td>Adapter HTTP: valida payloads, autentica bearer token e traduz erros de dominio em HTTP.</td>
+<td><code>src/adapters/input/api_routes.py</code></td>
+</tr>
+<tr>
+<td><code>src/core/domain</code></td>
+<td>Modelos e regras puras de negocio.</td>
+<td><code>src/core/domain/models.py</code>, <code>src/core/domain/rules.py</code></td>
+</tr>
+<tr>
+<td><code>src/core/use_cases</code></td>
+<td>Orquestracao de aplicacao para autenticacao, indicadores, areas, metas, projecoes, planos e issues.</td>
+<td><code>src/core/use_cases/</code></td>
+</tr>
+<tr>
+<td><code>src/core/ports</code></td>
+<td>Contratos para repositories, sessao e gateway de tarefas.</td>
+<td><code>src/core/ports/repositories.py</code>, <code>src/core/ports/task_gateway.py</code></td>
+</tr>
+<tr>
+<td><code>src/adapters/output/supabase_repositories.py</code></td>
+<td>Implementacao Supabase dos ports de persistencia e servico de token.</td>
+<td><code>src/adapters/output/supabase_repositories.py</code></td>
+</tr>
+<tr>
+<td><code>src/adapters/output/bitrix_task_gateway.py</code></td>
+<td>Implementacao do gateway de tarefas/usuarios Bitrix.</td>
+<td><code>src/adapters/output/bitrix_task_gateway.py</code></td>
+</tr>
+<tr>
+<td><code>src/infra</code></td>
+<td>Configuracao, clients Supabase e Bitrix, logging.</td>
+<td><code>src/infra/</code></td>
+</tr>
+<tr>
+<td><code>web/</code></td>
+<td>UI do executavel principal.</td>
+<td><code>web/index.html</code>, <code>web/app.js</code>, <code>web/styles.css</code></td>
+</tr>
+<tr>
+<td><code>src/admin/users_app.py</code></td>
+<td>App FastAPI separado para administracao local de usuarios.</td>
+<td><code>src/admin/users_app.py</code></td>
+</tr>
+<tr>
+<td><code>admin_web/</code></td>
+<td>UI do executavel administrativo.</td>
+<td><code>admin_web/index.html</code>, <code>admin_web/app.js</code>, <code>admin_web/styles.css</code></td>
+</tr>
+</tbody></table>
+<h2>Dependencias Externas</h2>
+<table>
+<thead><tr>
+<th>Dependencia</th>
+<th>Uso</th>
+<th>Fronteira</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Supabase/Postgres</td>
+<td>Persistencia de usuarios, areas, indicadores, valores, metas, projecoes, planos, Issue Reports e tags.</td>
+<td><code>infra/supabase_client.py</code>, <code>supabase_repositories.py</code>, <code>users_app.py</code></td>
+</tr>
+<tr>
+<td>Supabase opcional de usuarios</td>
+<td>Diretorio para autocomplete de responsaveis Bitrix.</td>
+<td><code>SupabaseBitrixUserDirectory</code></td>
+</tr>
+<tr>
+<td>Bitrix24 webhook/API</td>
+<td>Criacao de tarefas e busca de usuarios ativos.</td>
+<td><code>BitrixClient</code>, <code>BitrixTaskGateway</code></td>
+</tr>
+<tr>
+<td>Ferramentas de processo Windows</td>
+<td>Limpeza de porta e encerramento local.</td>
+<td><code>start_server.py</code>, <code>users_app.py</code>, <code>api_routes.py</code></td>
+</tr>
+</tbody></table>
+<h2>Observacoes de Fronteira Arquitetural</h2>
+<ul>
+<li><code>core/</code> nao depende de FastAPI, Supabase, Bitrix, filesystem, navegador ou PyInstaller.</li>
+<li>Rotas HTTP e JavaScript estatico atuam como entrada/UI, nao como fonte principal de regra de negocio.</li>
+<li><code>src/app/wiring.py</code> e a composition root do executavel principal.</li>
+<li><code>src/admin/users_app.py</code> possui composicao propria por ser um executavel administrativo separado.</li>
+<li><code>psc-web/</code> nao faz parte destes diagramas.</li>
+</ul>
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true, securityLevel: 'loose' });
+  </script>
+</body>
+</html>
+

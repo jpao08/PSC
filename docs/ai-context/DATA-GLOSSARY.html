@@ -1,0 +1,361 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DATA-GLOSSARY</title>
+  <style>
+:root {
+  color-scheme: light;
+  --bg: #f7f8fa;
+  --paper: #ffffff;
+  --text: #20242a;
+  --muted: #5f6875;
+  --border: #d8dee8;
+  --accent: #1f6feb;
+  --code-bg: #f2f5f9;
+  --table-head: #eef3f8;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", Arial, sans-serif;
+  line-height: 1.58;
+}
+main {
+  max-width: 1120px;
+  margin: 32px auto;
+  padding: 40px 48px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+}
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1.22;
+  margin: 1.45em 0 0.55em;
+}
+h1 { margin-top: 0; font-size: 2.1rem; border-bottom: 2px solid var(--border); padding-bottom: 0.45rem; }
+h2 { font-size: 1.55rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+h3 { font-size: 1.22rem; }
+p, ul, ol, table, pre { margin: 0.75rem 0 1rem; }
+ul, ol { padding-left: 1.45rem; }
+li + li { margin-top: 0.25rem; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code {
+  font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+  background: var(--code-bg);
+  padding: 0.12rem 0.28rem;
+  border-radius: 4px;
+  font-size: 0.92em;
+}
+pre {
+  overflow-x: auto;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+  border-radius: 6px;
+}
+pre code { background: transparent; padding: 0; }
+pre.mermaid {
+  background: #fff;
+  text-align: center;
+  white-space: pre-wrap;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.94rem;
+  display: block;
+  overflow-x: auto;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 0.55rem 0.65rem;
+  vertical-align: top;
+}
+th { background: var(--table-head); text-align: left; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.2rem 1rem;
+  border-left: 4px solid var(--border);
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
+.meta {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+@media print {
+  body { background: #fff; }
+  main { margin: 0; max-width: none; border: 0; padding: 22mm 18mm; }
+  table, pre { break-inside: avoid; }
+  a { color: inherit; }
+}
+</style>
+</head>
+<body>
+  <main>
+    <div class="meta">Fonte: DATA-GLOSSARY.md - Gerado a partir de Markdown</div>
+<h1>Glossario de Dados: PSC Executavel</h1>
+<p>Data: 2026-07-11 Escopo: aplicacao executavel PSC e modulo executavel de administracao de usuarios. <code>psc-web/</code> esta fora do escopo.</p>
+<h2>Glossario</h2>
+<table>
+<thead><tr>
+<th>Dado</th>
+<th>Significado</th>
+<th>Tipo/formato</th>
+<th>Armazenamento</th>
+<th>Produtores</th>
+<th>Consumidores</th>
+<th>Tratamentos</th>
+<th>Validacao/seguranca</th>
+<th>Evidencia</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Usuario</td>
+<td>Pessoa autenticavel no PSC.</td>
+<td><code>User</code>; linha em <code>users</code>.</td>
+<td>Supabase <code>users</code>.</td>
+<td>Admin executavel, seed/migrations.</td>
+<td>Auth, indicadores, Issue Reports, admin.</td>
+<td>Login/email normalizado; <code>area_ids</code> carregado de <code>user_area_access</code>; primeira area espelhada em <code>area_id</code>.</td>
+<td>Senha sempre como hash; usuario precisa estar ativo; role valida.</td>
+<td><code>models.py</code>, <code>rules.py</code>, <code>users_app.py</code>, <code>supabase_repositories.py</code></td>
+</tr>
+<tr>
+<td>Papel</td>
+<td>Categoria de permissao.</td>
+<td><code>gestor_area</code>, <code>executivo</code>, <code>executivo_visualizacao</code>.</td>
+<td>Supabase <code>roles</code>; <code>users.role</code>.</td>
+<td>SQL migrations.</td>
+<td>Regras de autorizacao.</td>
+<td>Checagens literais em use cases e regras.</td>
+<td>Role invalida e rejeitada.</td>
+<td><code>models.py</code>, <code>rules.py</code>, SQL</td>
+</tr>
+<tr>
+<td>Area</td>
+<td>Unidade organizacional dona de indicadores e acessos.</td>
+<td><code>Area</code>; <code>id</code>, <code>name</code>, <code>hex_color</code>, <code>is_active</code>.</td>
+<td>Supabase <code>areas</code>.</td>
+<td>Endpoints executivos, seed SQL.</td>
+<td>Indicadores, filtros, usuarios, Issue Reports.</td>
+<td>Ordenada por nome; desativacao via <code>is_active</code>.</td>
+<td>Nome obrigatorio; unicidade de area ativa; cor <code>#RRGGBB</code>.</td>
+<td><code>CreateArea</code>, <code>UpdateArea</code>, repository</td>
+</tr>
+<tr>
+<td>Acesso usuario-area</td>
+<td>Vinculo muitos-para-muitos entre usuarios e areas.</td>
+<td><code>(user_id, area_id)</code>.</td>
+<td>Supabase <code>user_area_access</code>.</td>
+<td>Admin executavel.</td>
+<td>Autorizacao e filtro de indicadores.</td>
+<td>Deduplicado; carregado em <code>User.area_ids</code>.</td>
+<td>Cascade em delete de usuario/area.</td>
+<td><code>users_app.py</code>, <code>SupabaseUserRepository</code>, SQL</td>
+</tr>
+<tr>
+<td>Unidade de indicador</td>
+<td>Unidade de medida exibida no indicador.</td>
+<td><code>IndicatorUnit</code>; <code>code</code>, <code>label</code>.</td>
+<td>Supabase <code>indicator_units</code>.</td>
+<td>SQL.</td>
+<td>Cadastro/listagem de indicadores.</td>
+<td>Apenas unidades ativas sao listadas.</td>
+<td>Obrigatoria no cadastro/edicao de indicador.</td>
+<td><code>IndicatorUnit</code>, <code>list_units</code>, <code>CreateIndicator</code></td>
+</tr>
+<tr>
+<td>Indicador</td>
+<td>KPI acompanhado por area.</td>
+<td><code>Indicator</code>, <code>NewIndicator</code>, <code>IndicatorTableRow</code>.</td>
+<td>Supabase <code>indicators</code>.</td>
+<td>Executivo.</td>
+<td>Dashboard, valores, metas, projecoes, planos.</td>
+<td>Enriquecido com area e unidade; listagem usa ativos.</td>
+<td><code>aggregation_type</code> em <code>sum/avg/latest</code>; maturidade 0..100; nome ativo unico.</td>
+<td><code>models.py</code>, use cases, SQL</td>
+</tr>
+<tr>
+<td>Valor semanal</td>
+<td>Valor numerico de uma faixa mensal do indicador.</td>
+<td><code>IndicatorValue</code>; ano/mes/faixa/valor/usuario.</td>
+<td>Supabase <code>indicator_values</code>.</td>
+<td>Gestor de area.</td>
+<td>Calculo mensal e dashboard.</td>
+<td>Upsert por <code>indicator_id/year/month/week_number</code>; string vira Decimal.</td>
+<td>Mes 1..12; faixa 1..4 na logica atual.</td>
+<td><code>RegisterIndicatorValue</code>, rotas, regras</td>
+</tr>
+<tr>
+<td>Historico de valor</td>
+<td>Auditoria de alteracao de valor semanal.</td>
+<td>Valor anterior/novo e usuario.</td>
+<td>Supabase <code>indicator_value_history</code>.</td>
+<td>Repository ao alterar valor existente.</td>
+<td>Auditoria e rastreio.</td>
+<td>Criado apenas quando valor muda.</td>
+<td>Referencia indicador e usuario alterador.</td>
+<td><code>upsert_weekly_value</code>, SQL</td>
+</tr>
+<tr>
+<td>Meta mensal</td>
+<td>Meta executiva de um indicador no mes.</td>
+<td><code>IndicatorMonthTarget</code>.</td>
+<td>Supabase <code>indicator_month_targets</code>.</td>
+<td>Executivo.</td>
+<td>Dashboard e comparacao abaixo da meta.</td>
+<td>Valor vazio remove meta.</td>
+<td>Valor nao pode ser negativo.</td>
+<td><code>UpsertIndicatorMonthTarget</code>, testes</td>
+</tr>
+<tr>
+<td>Projecao mensal</td>
+<td>Valor projetado mensal.</td>
+<td><code>IndicatorMonthProjection</code>.</td>
+<td>Supabase <code>indicator_month_projections</code>.</td>
+<td>Usuario com permissao.</td>
+<td>Dashboard e planejamento.</td>
+<td>Valor vazio remove projecao.</td>
+<td>Exige <code>can_edit_projected_value</code>; negativo permitido.</td>
+<td><code>UpsertIndicatorMonthProjection</code>, testes</td>
+</tr>
+<tr>
+<td>Mes nao aplicavel</td>
+<td>Marcacao de que um indicador nao se aplica em determinado mes.</td>
+<td><code>IndicatorMonthNotApplicable</code>.</td>
+<td>Supabase <code>indicator_month_not_applicable</code>.</td>
+<td>Gestor da area.</td>
+<td>Dashboard mensal.</td>
+<td>Quando marcado, valor mensal real fica <code>None</code>; meta/projecao permanecem.</td>
+<td>Gestor deve ter acesso ao indicador.</td>
+<td><code>SetIndicatorMonthNotApplicable</code>, <code>ListIndicators</code>, testes</td>
+</tr>
+<tr>
+<td>Plano de acao</td>
+<td>Acao corretiva vinculada a indicador.</td>
+<td><code>ActionPlan</code>, <code>NewActionPlan</code>.</td>
+<td>Supabase <code>action_plans</code>.</td>
+<td>Executivo.</td>
+<td>UI, historico, Bitrix24.</td>
+<td>Pode criar tarefa Bitrix e guardar <code>bitrix_task_id</code>.</td>
+<td>Executivo apenas; campos textuais obrigatorios; responsavel obrigatorio.</td>
+<td><code>CreateActionPlan</code>, <code>BitrixTaskGateway</code></td>
+</tr>
+<tr>
+<td>Historico de plano</td>
+<td>Evento de auditoria do plano de acao.</td>
+<td><code>ActionPlanHistoryEvent</code>.</td>
+<td>Supabase <code>action_plan_history</code>.</td>
+<td>Use case de plano.</td>
+<td>Auditoria.</td>
+<td>Evento de criacao coberto por testes.</td>
+<td>Referencia plano e criador.</td>
+<td><code>CreateActionPlan</code>, testes</td>
+</tr>
+<tr>
+<td>Usuario Bitrix</td>
+<td>Responsavel candidato para plano de acao.</td>
+<td><code>BitrixUser</code>; <code>id</code>, <code>name</code>, <code>email</code>.</td>
+<td>Diretorio Supabase opcional ou API Bitrix.</td>
+<td><code>SupabaseBitrixUserDirectory</code>, <code>BitrixClient</code>.</td>
+<td>Autocomplete e atribuicao de tarefa.</td>
+<td>Busca local normaliza acentos; fallback varre usuarios ativos Bitrix.</td>
+<td>Webhook nao documentado com valor.</td>
+<td><code>bitrix_task_gateway.py</code>, <code>bitrix_client.py</code>, testes</td>
+</tr>
+<tr>
+<td>Issue Report</td>
+<td>Registro de problema/ocorrencia/oportunidade.</td>
+<td><code>IssueReport</code>, <code>NewIssueReport</code>.</td>
+<td>Supabase <code>issue_reports</code>.</td>
+<td>Usuarios com permissao.</td>
+<td>Lista de issues e revisao executiva.</td>
+<td>Scores GUT calculados; campos legados e novos sao mapeados.</td>
+<td>Permissao necessaria; GUT 1..5; soft delete.</td>
+<td><code>CreateIssueReport</code>, <code>ListIssueReports</code>, repository</td>
+</tr>
+<tr>
+<td>Status de Issue</td>
+<td>Estado de workflow da issue.</td>
+<td>Texto de conjunto fixo em portugues.</td>
+<td><code>issue_reports.status</code>.</td>
+<td>Executivo.</td>
+<td>UI de Issue Reports.</td>
+<td>Validado antes de update.</td>
+<td>Status invalido rejeitado.</td>
+<td><code>IssueStatus</code>, <code>ensure_issue_status</code></td>
+</tr>
+<tr>
+<td>Tag de Issue</td>
+<td>Marcador classificatorio da issue.</td>
+<td><code>IssueTag</code>; nome/cor/ativo.</td>
+<td>Supabase <code>issue_tags</code>.</td>
+<td>Executivo.</td>
+<td>Filtro e exibicao de Issue Reports.</td>
+<td>Desativada por <code>is_active</code>; nome ativo unico.</td>
+<td>Nome obrigatorio; cor <code>#RRGGBB</code>.</td>
+<td>Rotas, SQL <code>023</code></td>
+</tr>
+<tr>
+<td>Vinculo Issue-Tag</td>
+<td>Relacao muitos-para-muitos entre issue e tag.</td>
+<td><code>(issue_id, tag_id)</code>.</td>
+<td>Supabase <code>issue_report_tags</code>.</td>
+<td>Executivo.</td>
+<td>Serializacao de Issue Reports.</td>
+<td>Semantica de substituicao total ao salvar tags.</td>
+<td>Referencia issue e tag.</td>
+<td><code>replace_issue_tags</code>, SQL <code>023</code></td>
+</tr>
+<tr>
+<td>Token de sessao</td>
+<td>Credencial bearer de autenticacao.</td>
+<td>Payload/signature base64url.</td>
+<td>Local storage do navegador; sem persistencia server-side.</td>
+<td><code>SimpleTokenService</code>.</td>
+<td>Autenticacao API.</td>
+<td>HMAC-SHA256 com <code>sub</code> e <code>exp</code>.</td>
+<td>Usa <code>APP_SECRET_KEY</code>; TTL configuravel no app e fixo 720 no admin.</td>
+<td><code>SimpleTokenService</code>, <code>web/app.js</code>, <code>admin_web/app.js</code></td>
+</tr>
+<tr>
+<td>Configuracoes de ambiente</td>
+<td>Parametros de runtime.</td>
+<td>Variaveis de ambiente.</td>
+<td><code>.env</code>, <code>.env</code> empacotado, process env.</td>
+<td>Usuario/ambiente.</td>
+<td>Settings, Supabase, Bitrix, tokens, admin.</td>
+<td>Carrega <code>.env</code> local; em frozen tambem verifica <code>.env</code> empacotado.</td>
+<td>Valores secretos nao devem ser documentados.</td>
+<td><code>src/infra/config.py</code>, <code>.env.example</code></td>
+</tr>
+</tbody></table>
+<h2>Variaveis de Ambiente Conhecidas</h2>
+<p>Valores nao foram lidos nem registrados.</p>
+<ul>
+<li><code>SUPABASE_URL</code></li>
+<li><code>SUPABASE_KEY</code></li>
+<li><code>BITRIX_WEBHOOK_URL</code></li>
+<li><code>APP_SECRET_KEY</code></li>
+<li><code>SUPABASE_USERS_URL</code></li>
+<li><code>SUPABASE_USERS_KEY</code></li>
+<li><code>SUPABASE_USERS_TABLE</code></li>
+<li><code>APP_TOKEN_TTL_MINUTES</code></li>
+<li><code>LOG_LEVEL</code></li>
+<li><code>USER_ADMIN_PASSWORD</code></li>
+<li>Aliases de compatibilidade: <code>USERS_SUPABASE_URL</code>, <code>SUPABASE_USERS_SERVICE_ROLE_KEY</code>, <code>USERS_SUPABASE_KEY</code>, <code>SUPABASE_SERVICE_ROLE_KEY</code></li>
+</ul>
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true, securityLevel: 'loose' });
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,199 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>README</title>
+  <style>
+:root {
+  color-scheme: light;
+  --bg: #f7f8fa;
+  --paper: #ffffff;
+  --text: #20242a;
+  --muted: #5f6875;
+  --border: #d8dee8;
+  --accent: #1f6feb;
+  --code-bg: #f2f5f9;
+  --table-head: #eef3f8;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", Arial, sans-serif;
+  line-height: 1.58;
+}
+main {
+  max-width: 1120px;
+  margin: 32px auto;
+  padding: 40px 48px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+}
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1.22;
+  margin: 1.45em 0 0.55em;
+}
+h1 { margin-top: 0; font-size: 2.1rem; border-bottom: 2px solid var(--border); padding-bottom: 0.45rem; }
+h2 { font-size: 1.55rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+h3 { font-size: 1.22rem; }
+p, ul, ol, table, pre { margin: 0.75rem 0 1rem; }
+ul, ol { padding-left: 1.45rem; }
+li + li { margin-top: 0.25rem; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code {
+  font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+  background: var(--code-bg);
+  padding: 0.12rem 0.28rem;
+  border-radius: 4px;
+  font-size: 0.92em;
+}
+pre {
+  overflow-x: auto;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+  border-radius: 6px;
+}
+pre code { background: transparent; padding: 0; }
+pre.mermaid {
+  background: #fff;
+  text-align: center;
+  white-space: pre-wrap;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.94rem;
+  display: block;
+  overflow-x: auto;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 0.55rem 0.65rem;
+  vertical-align: top;
+}
+th { background: var(--table-head); text-align: left; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.2rem 1rem;
+  border-left: 4px solid var(--border);
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
+.meta {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+@media print {
+  body { background: #fff; }
+  main { margin: 0; max-width: none; border: 0; padding: 22mm 18mm; }
+  table, pre { break-inside: avoid; }
+  a { color: inherit; }
+}
+</style>
+</head>
+<body>
+  <main>
+    <div class="meta">Fonte: README.md - Gerado a partir de Markdown</div>
+<h1>Contexto IA: PSC Executavel</h1>
+<p>Data: 2026-07-11 Escopo: somente a versao executavel do PSC.</p>
+<h2>Objetivo</h2>
+<p>Esta pasta reune contexto tecnico e de produto para que uma IA ou pessoa desenvolvedora consiga continuar o trabalho no PSC sem redescobrir o projeto do zero. O pacote foi atualizado em lugar, dentro da pasta existente <code>docs/ai-context/</code>.</p>
+<h2>Escopo Analisado</h2>
+<p>Incluido:</p>
+<ul>
+<li>Aplicacao executavel principal <code>PSC.exe</code>.</li>
+<li>Aplicacao executavel administrativa <code>PSC-Users-Admin.exe</code>.</li>
+<li>Backend FastAPI em <code>src/</code>.</li>
+<li>UI estatica empacotada do executavel principal em <code>web/</code>.</li>
+<li>UI estatica empacotada do executavel admin em <code>admin_web/</code>.</li>
+<li>Scripts/specs de build com PyInstaller.</li>
+<li>Schemas e migrations SQL em <code>sql/</code>.</li>
+<li>Testes em <code>tests/</code>.</li>
+</ul>
+<p>Excluido:</p>
+<ul>
+<li><code>psc-web/</code>, por solicitacao explicita do usuario, pois ainda esta incompleto.</li>
+<li><code>.env</code> real. Nenhum valor secreto foi lido ou documentado.</li>
+<li>Artefatos gerados como <code>dist/</code>, <code>build/</code>, <code>.venv/</code>, caches e similares.</li>
+</ul>
+<h2>Stack Detectada</h2>
+<ul>
+<li>Python 3.11+</li>
+<li>FastAPI</li>
+<li>Uvicorn</li>
+<li>Supabase/Postgres</li>
+<li>Bitrix24 via webhook/API HTTP</li>
+<li>HTML, CSS e JavaScript estatico, sem build frontend para o executavel atual</li>
+<li>PyInstaller para gerar executaveis Windows one-file</li>
+<li>pytest e ruff para validacao</li>
+</ul>
+<h2>Indice dos Documentos</h2>
+<ul>
+<li><a href="PRD.html">PRD.md</a>: requisitos funcionais, nao funcionais, regras de negocio, fluxos, riscos e evidencias.</li>
+<li><a href="SERVICE-DIAGRAM.html">SERVICE-DIAGRAM.md</a>: diagramas Mermaid de servicos, modulos, execucao e build.</li>
+<li><a href="DATA-GLOSSARY.html">DATA-GLOSSARY.md</a>: glossario de dados com origem, armazenamento, produtores, consumidores e tratamentos.</li>
+<li><a href="DATA-MODEL.html">DATA-MODEL.md</a>: modelo de dados, entidades, relacionamentos, ciclos de vida e diagrama ER Mermaid.</li>
+<li><a href="HANDOFF.md">HANDOFF.md</a>: resumo operacional para retomada por IA ou pessoa desenvolvedora.</li>
+</ul>
+<h2>Fontes Inspecionadas</h2>
+<ul>
+<li><code>README.md</code></li>
+<li><code>pyproject.toml</code></li>
+<li><code>PSC.spec</code></li>
+<li><code>PSC-Users-Admin.spec</code></li>
+<li><code>scripts/build_exe.ps1</code></li>
+<li><code>scripts/build_admin_exe.ps1</code></li>
+<li><code>src/app/main.py</code></li>
+<li><code>src/app/start_server.py</code></li>
+<li><code>src/app/wiring.py</code></li>
+<li><code>src/admin/users_app.py</code></li>
+<li><code>src/adapters/input/api_routes.py</code></li>
+<li><code>src/adapters/output/supabase_repositories.py</code></li>
+<li><code>src/adapters/output/bitrix_task_gateway.py</code></li>
+<li><code>src/adapters/output/supabase_bitrix_user_directory.py</code></li>
+<li><code>src/infra/config.py</code></li>
+<li><code>src/infra/supabase_client.py</code></li>
+<li><code>src/infra/bitrix_client.py</code></li>
+<li><code>src/core/domain/models.py</code></li>
+<li><code>src/core/domain/rules.py</code></li>
+<li><code>src/core/ports/repositories.py</code></li>
+<li><code>src/core/ports/task_gateway.py</code></li>
+<li><code>src/core/use_cases/</code></li>
+<li><code>web/</code></li>
+<li><code>admin_web/</code></li>
+<li><code>sql/README.md</code></li>
+<li><code>sql/000_consolidated_schema.sql</code></li>
+<li><code>sql/022_issue_fields_na_and_viewer_role.sql</code></li>
+<li><code>sql/023_issue_report_tags.sql</code></li>
+<li><code>sql/024_add_bitrix_identity_to_users.sql</code></li>
+<li><code>sql/025_add_user_admin_permission.sql</code></li>
+<li><code>tests/</code></li>
+</ul>
+<h2>Ordem Recomendada Para Proxima Sessao de IA</h2>
+<ol>
+<li>Ler <code>HANDOFF.md</code> para entender o estado da documentacao e os proximos passos.</li>
+<li>Ler <code>PRD.md</code> para entender produto, regras e requisitos implementados.</li>
+<li>Ler <code>SERVICE-DIAGRAM.md</code> para entender interacoes entre app, adapters, Supabase e Bitrix24.</li>
+<li>Ler <code>DATA-MODEL.md</code> para entender persistencia e relacionamentos.</li>
+<li>Ler <code>DATA-GLOSSARY.md</code> para consultar dados especificos durante implementacao.</li>
+</ol>
+<h2>Gaps Conhecidos</h2>
+<ul>
+<li>A analise foi estatica. O app, testes, build PyInstaller, Supabase e Bitrix24 nao foram executados.</li>
+<li>O repositorio estava com mudancas nao commitadas antes desta atualizacao documental.</li>
+<li><code>sql/000_consolidated_schema.sql</code> declara consolidar migrations ate <code>001..023</code>, mas existem <code>024</code> e <code>025</code>; isso pode exigir atualizacao do consolidado.</li>
+<li><code>can_admin_users</code> existe em migration, mas o admin observado autentica por <code>USER_ADMIN_PASSWORD</code>.</li>
+</ul>
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true, securityLevel: 'loose' });
+  </script>
+</body>
+</html>
+
