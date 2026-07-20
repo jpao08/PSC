@@ -19,7 +19,9 @@ from core.domain.models import (
     ValidationError,
 )
 
-_VALID_ROLES = {"gestor_area", "executivo", "executivo_visualizacao"}
+_AREA_SCOPED_ROLES = {"gestor_area", "gestor_tatico", "gestor_operacional"}
+_GLOBAL_VIEW_ROLES = {"executivo", "executivo_visualizacao"}
+_VALID_ROLES = _AREA_SCOPED_ROLES | _GLOBAL_VIEW_ROLES
 _VALID_AGGREGATIONS = {"sum", "avg", "latest"}
 _VALID_ISSUE_STATUSES = {
     "Concluído",
@@ -124,9 +126,9 @@ def ensure_indicator_in_user_area(user: User, indicator: Indicator) -> None:
 
 
 def ensure_can_view_indicator(user: User, indicator: Indicator) -> None:
-    if user.role in {"executivo", "executivo_visualizacao"}:
+    if user.role in _GLOBAL_VIEW_ROLES:
         return
-    if user.role == "gestor_area" and indicator.area_id in get_user_area_ids(user):
+    if user.role in _AREA_SCOPED_ROLES and indicator.area_id in get_user_area_ids(user):
         return
     raise AuthorizationError("Usuario sem permissao para acessar este indicador.")
 
@@ -175,6 +177,49 @@ def ensure_maturity_level(value: Decimal | None) -> Decimal | None:
     if value < Decimal("0") or value > Decimal("100"):
         raise ValidationError("Maturidade deve estar entre 0 e 100.")
     return value
+
+
+def ensure_confidence_level(value: Decimal | None) -> Decimal | None:
+    if value is None:
+        return None
+    if value < Decimal("0") or value > Decimal("100"):
+        raise ValidationError("Confianca deve estar entre 0 e 100.")
+    return value
+
+
+def classify_performance(value: Decimal | None) -> str:
+    if value is None:
+        return "neutral"
+    if value <= Decimal("30"):
+        return "not_reliable"
+    if value <= Decimal("50"):
+        return "fragile"
+    if value <= Decimal("70"):
+        return "functional"
+    if value <= Decimal("90"):
+        return "reliable"
+    return "strategic"
+
+
+def calculate_achievement_percent(value: Decimal | None, target: Decimal | None) -> Decimal | None:
+    if value is None or target is None or target == Decimal("0"):
+        return None
+    return (value / target) * Decimal("100")
+
+
+def calculate_annual_value(
+    values: Iterable[tuple[int, Decimal]],
+    aggregation_type: AggregationType,
+) -> Decimal | None:
+    collected = list(values)
+    if not collected:
+        return None
+    raw_values = [value for _, value in collected]
+    if aggregation_type == "sum":
+        return sum(raw_values, start=Decimal("0"))
+    if aggregation_type == "latest":
+        return max(collected, key=lambda item: item[0])[1]
+    return sum(raw_values, start=Decimal("0")) / Decimal(len(raw_values))
 
 
 def ensure_hex_color_or_none(hex_color: str | None, field_name: str = "hex_color") -> str | None:

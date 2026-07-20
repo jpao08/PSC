@@ -13,12 +13,15 @@ from core.domain.models import (
     IndicatorMonthTarget,
     IndicatorUnit,
     IndicatorValue,
+    IndicatorYearPlanning,
     IssueReport,
     IssueTag,
     NewActionPlan,
     NewIssueReport,
     NewIndicator,
+    NewWinReport,
     User,
+    WinReport,
 )
 
 
@@ -109,6 +112,13 @@ class IndicatorRepositoryPort(Protocol):
     ) -> list[IndicatorMonthNotApplicable]:
         ...
 
+    def list_year_planning(
+        self,
+        indicator_ids: list[str],
+        year: int,
+    ) -> list[IndicatorYearPlanning]:
+        ...
+
     def upsert_month_target(
         self,
         indicator_id: str,
@@ -143,6 +153,16 @@ class IndicatorRepositoryPort(Protocol):
         is_not_applicable: bool,
         user_id: str,
     ) -> None:
+        ...
+
+    def upsert_year_planning(
+        self,
+        indicator_id: str,
+        year: int,
+        annual_target: Decimal | None,
+        confidence_level: Decimal | None,
+        user_id: str,
+    ) -> IndicatorYearPlanning:
         ...
 
 
@@ -191,6 +211,25 @@ class IssueReportRepositoryPort(Protocol):
         ...
 
     def replace_issue_tags(self, issue_id: str, tag_ids: list[str], updated_by: str) -> IssueReport:
+        ...
+
+
+class WinReportRepositoryPort(Protocol):
+    def create_win_report(self, win: NewWinReport) -> WinReport:
+        ...
+
+    def list_win_reports(self, requester_id: str | None = None) -> list[WinReport]:
+        ...
+
+    def update_win_status(
+        self,
+        win_id: str,
+        status: str | None,
+        reviewed_by: str,
+    ) -> WinReport:
+        ...
+
+    def soft_delete_win_report(self, win_id: str, deleted_by: str) -> None:
         ...
 
 

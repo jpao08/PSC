@@ -5,7 +5,13 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-Role = Literal["gestor_area", "executivo", "executivo_visualizacao"]
+Role = Literal[
+    "gestor_area",
+    "gestor_tatico",
+    "gestor_operacional",
+    "executivo",
+    "executivo_visualizacao",
+]
 AggregationType = Literal["sum", "avg", "latest"]
 
 
@@ -102,6 +108,14 @@ class IndicatorTableRow:
     monthly_targets: dict[int, Decimal | None]
     not_applicable: dict[int, bool]
     below_target: dict[int, bool]
+    annual_target: Decimal | None = None
+    annual_projected: Decimal | None = None
+    annual_real: Decimal | None = None
+    confidence_level: Decimal | None = None
+    projected_achievement_percent: Decimal | None = None
+    maturity_classification: str = "neutral"
+    confidence_classification: str = "neutral"
+    projected_achievement_classification: str = "neutral"
 
 
 @dataclass(frozen=True)
@@ -120,6 +134,16 @@ class IndicatorMonthProjection:
     year: int
     month: int
     projected_value: Decimal
+    created_by: str | None
+    updated_by: str | None
+
+
+@dataclass(frozen=True)
+class IndicatorYearPlanning:
+    indicator_id: str
+    year: int
+    annual_target: Decimal | None
+    confidence_level: Decimal | None
     created_by: str | None
     updated_by: str | None
 
@@ -248,6 +272,31 @@ class IssueTag:
     name: str
     color: str | None
     is_active: bool = True
+
+
+@dataclass(frozen=True)
+class NewWinReport:
+    title: str
+    requester_id: str
+    area_id: str | None
+    is_other_area: bool
+    description: str
+
+
+@dataclass(frozen=True)
+class WinReport:
+    id: str
+    title: str
+    requester_id: str
+    requester_name: str | None
+    area_id: str | None
+    area_name: str | None
+    is_other_area: bool
+    description: str
+    status: IssueStatus
+    created_at: datetime
+    reviewed_by: str | None
+    reviewed_at: datetime | None
 
 
 @dataclass(frozen=True)

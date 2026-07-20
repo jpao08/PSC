@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { calculateMonthlyValue, ensureCanEditIndicatorMaturity, ensureCanViewIndicator } from "../src/core/domain/rules";
-import { AuthorizationError, Indicator, User } from "../src/core/domain/models";
+import {
+  calculateAchievementPercent,
+  calculateAnnualValue,
+  calculateMonthlyValue,
+  classifyPerformance,
+  ensureCanEditIndicatorMaturity,
+  ensureCanViewIndicator,
+  validateConfidenceLevel
+} from "../src/core/domain/rules";
+import { AuthorizationError, Indicator, User, ValidationError } from "../src/core/domain/models";
 
 const baseUser: User = {
   id: "user-1",
@@ -46,6 +54,8 @@ describe("rules", () => {
 
   it("allows managers to view indicators from their areas", () => {
     expect(() => ensureCanViewIndicator(baseUser, indicator)).not.toThrow();
+    expect(() => ensureCanViewIndicator({ ...baseUser, role: "gestor_tatico" }, indicator)).not.toThrow();
+    expect(() => ensureCanViewIndicator({ ...baseUser, role: "gestor_operacional" }, indicator)).not.toThrow();
   });
 
   it("blocks managers from other areas", () => {
@@ -58,5 +68,27 @@ describe("rules", () => {
       ensureCanEditIndicatorMaturity({ ...baseUser, role: "executivo_visualizacao", canEditIndicatorMaturity: true }, indicator)
     ).not.toThrow();
     expect(() => ensureCanEditIndicatorMaturity({ ...baseUser, role: "executivo" }, indicator)).not.toThrow();
+  });
+
+  it("classifies performance scale boundaries", () => {
+    expect(classifyPerformance(null)).toBe("neutral");
+    expect(classifyPerformance(0)).toBe("not_reliable");
+    expect(classifyPerformance(30)).toBe("not_reliable");
+    expect(classifyPerformance(31)).toBe("fragile");
+    expect(classifyPerformance(50)).toBe("fragile");
+    expect(classifyPerformance(51)).toBe("functional");
+    expect(classifyPerformance(70)).toBe("functional");
+    expect(classifyPerformance(71)).toBe("reliable");
+    expect(classifyPerformance(90)).toBe("reliable");
+    expect(classifyPerformance(91)).toBe("strategic");
+    expect(classifyPerformance(101)).toBe("strategic");
+  });
+
+  it("validates confidence and annual calculations", () => {
+    expect(validateConfidenceLevel(100)).toBe(100);
+    expect(() => validateConfidenceLevel(100.01)).toThrow(ValidationError);
+    expect(calculateAnnualValue([{ month: 1, value: 80 }, { month: 2, value: 75 }], "sum")).toBe(155);
+    expect(calculateAchievementPercent(68, 100)).toBe(68);
+    expect(calculateAchievementPercent(68, 0)).toBeNull();
   });
 });

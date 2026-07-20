@@ -1,4 +1,9 @@
-export type Role = "gestor_area" | "executivo" | "executivo_visualizacao";
+export type Role =
+  | "gestor_area"
+  | "gestor_tatico"
+  | "gestor_operacional"
+  | "executivo"
+  | "executivo_visualizacao";
 export type AggregationType = "sum" | "avg" | "latest";
 export type IssueStatus =
   | "Concluido"
@@ -86,6 +91,14 @@ export type IndicatorTableRow = {
   unitId: string | null;
   unit: string | null;
   maturityLevel: number | null;
+  annualTarget: number | null;
+  annualProjected: number | null;
+  annualReal: number | null;
+  confidenceLevel: number | null;
+  projectedAchievementPercent: number | null;
+  maturityClassification: PerformanceClassification;
+  confidenceClassification: PerformanceClassification;
+  projectedAchievementClassification: PerformanceClassification;
   months: Array<{
     month: number;
     value: number | null;
@@ -95,6 +108,14 @@ export type IndicatorTableRow = {
     belowTarget: boolean;
   }>;
 };
+
+export type PerformanceClassification =
+  | "neutral"
+  | "not_reliable"
+  | "fragile"
+  | "functional"
+  | "reliable"
+  | "strategic";
 
 export type ActionPlan = {
   id: string;

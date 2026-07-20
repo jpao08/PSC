@@ -18,6 +18,7 @@ from core.domain.models import (
     IndicatorMonthTarget,
     IndicatorUnit,
     IndicatorValue,
+    IndicatorYearPlanning,
     NewActionPlan,
     NewIndicator,
     NotFoundError,
@@ -76,6 +77,7 @@ class FakeIndicatorRepository:
         self.weekly_values: list[IndicatorValue] = []
         self.month_targets: list[IndicatorMonthTarget] = []
         self.month_projections: list[IndicatorMonthProjection] = []
+        self.year_planning: list[IndicatorYearPlanning] = []
         self.existing_names = existing_names or set()
 
     def list_active(
@@ -172,6 +174,17 @@ class FakeIndicatorRepository:
         return [
             item
             for item in self.not_applicable_items
+            if item.indicator_id in indicator_ids and item.year == year
+        ]
+
+    def list_year_planning(
+        self,
+        indicator_ids: list[str],
+        year: int,
+    ) -> list[IndicatorYearPlanning]:
+        return [
+            item
+            for item in self.year_planning
             if item.indicator_id in indicator_ids and item.year == year
         ]
 
@@ -305,6 +318,30 @@ class FakeIndicatorRepository:
                     marked_by=user_id,
                 )
             )
+
+    def upsert_year_planning(
+        self,
+        indicator_id: str,
+        year: int,
+        annual_target: Decimal | None,
+        confidence_level: Decimal | None,
+        user_id: str,
+    ) -> IndicatorYearPlanning:
+        saved = IndicatorYearPlanning(
+            indicator_id=indicator_id,
+            year=year,
+            annual_target=annual_target,
+            confidence_level=confidence_level,
+            created_by=user_id,
+            updated_by=user_id,
+        )
+        self.year_planning = [
+            item
+            for item in self.year_planning
+            if not (item.indicator_id == indicator_id and item.year == year)
+        ]
+        self.year_planning.append(saved)
+        return saved
 
 
 class FakeActionPlanRepository:
@@ -849,6 +886,46 @@ def test_month_not_applicable_hides_monthly_value_and_keeps_planning_values() ->
     assert rows[0].below_target[6] is False
     assert rows[0].monthly_targets[6] == Decimal("100")
     assert rows[0].monthly_projections[6] == Decimal("80")
+
+
+def test_list_indicators_returns_annual_consolidation_and_confidence() -> None:
+    indicator = Indicator(
+        id="ind-1",
+        area_id="area-A",
+        area_name="Area A",
+        area_hex_color=None,
+        name="Receita",
+        description=None,
+        aggregation_type="sum",
+        unit_id="unit-brl",
+        unit="R$",
+        is_active=True,
+        created_by="user-1",
+        maturity_level=Decimal("91"),
+    )
+    repository = FakeIndicatorRepository(indicator=indicator)
+    repository.weekly_values = [
+        IndicatorValue("ind-1", 2026, 1, 1, Decimal("80"), "user-1"),
+        IndicatorValue("ind-1", 2026, 2, 1, Decimal("20"), "user-1"),
+    ]
+    repository.month_projections = [
+        IndicatorMonthProjection("ind-1", 2026, 1, Decimal("70"), "exec", "exec"),
+        IndicatorMonthProjection("ind-1", 2026, 3, Decimal("30"), "exec", "exec"),
+    ]
+    repository.year_planning = [
+        IndicatorYearPlanning("ind-1", 2026, Decimal("200"), Decimal("72"), "exec", "exec"),
+    ]
+
+    rows = ListIndicators(indicator_repository=repository).execute(
+        user=build_user(role="executivo"),
+        year=2026,
+    )
+
+    assert rows[0].annual_real == Decimal("100")
+    assert rows[0].annual_projected == Decimal("130")
+    assert rows[0].projected_achievement_percent == Decimal("65.00")
+    assert rows[0].confidence_classification == "reliable"
+    assert rows[0].maturity_classification == "strategic"
 
 
 def test_manager_can_toggle_month_not_applicable_for_own_area() -> None:

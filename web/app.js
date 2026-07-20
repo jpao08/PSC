@@ -16,6 +16,7 @@ const state = {
   activeTab: "indicators",
   issueReports: [],
   issueTags: [],
+  wins: [],
 };
 
 const HEX_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/;
@@ -66,9 +67,21 @@ const indicatorsView = document.getElementById("indicators-view");
 const issuesView = document.getElementById("issues-view");
 const tabIndicators = document.getElementById("tab-indicators");
 const tabIssues = document.getElementById("tab-issues");
+const tabWins = document.getElementById("tab-wins");
 const issueForm = document.getElementById("issue-form");
 const issueAreaSelect = document.getElementById("issue-area-id");
 const issuesTable = document.getElementById("issues-table");
+const winsView = document.getElementById("wins-view");
+const winForm = document.getElementById("win-form");
+const winAreaSelect = document.getElementById("win-area-id");
+const winsTable = document.getElementById("wins-table");
+const winDateFrom = document.getElementById("win-date-from");
+const winDateTo = document.getElementById("win-date-to");
+const winRequesterFilter = document.getElementById("win-requester-filter");
+const winAreaFilter = document.getElementById("win-area-filter");
+const winTitleFilter = document.getElementById("win-title-filter");
+const winTitleSuggestions = document.getElementById("win-title-suggestions");
+const winStatusFilter = document.getElementById("win-status-filter");
 const issueDetailPanel = document.getElementById("issue-detail-panel");
 const issueDetailTitle = document.getElementById("issue-detail-title");
 const issueDetailBody = document.getElementById("issue-detail-body");
@@ -107,6 +120,24 @@ function formatNumber(value) {
     return "-";
   }
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value);
+}
+
+const performanceLabels = {
+  neutral: "Nao informado",
+  not_reliable: "Nao confiavel",
+  fragile: "Fragil",
+  functional: "Funcional",
+  reliable: "Confiavel",
+  strategic: "Estrategico",
+};
+
+function buildPerformanceBadge(value, classification) {
+  const badge = document.createElement("span");
+  const safeClassification = classification || "neutral";
+  badge.className = `performance-badge performance-${safeClassification}`;
+  badge.title = performanceLabels[safeClassification] || safeClassification;
+  badge.textContent = formatNumber(value);
+  return badge;
 }
 
 function formatIndicatorDisplayName(row) {
@@ -242,6 +273,7 @@ function applyLoggedOutView() {
   areaManagementPanel.classList.add("hidden");
   appTabs.classList.add("hidden");
   issuesView.classList.add("hidden");
+  winsView.classList.add("hidden");
   indicatorsView.classList.remove("hidden");
   execAreaModeHint.textContent = "";
 }
@@ -266,14 +298,21 @@ function canUseGlobalIndicatorFilters() {
 }
 
 async function showAppTab(tabName, shouldLoad = true) {
-  const effectiveTab = tabName === "issues" && canUseIssueReports() ? "issues" : "indicators";
+  const effectiveTab = ["issues", "wins"].includes(tabName) && canUseIssueReports()
+    ? tabName
+    : "indicators";
   state.activeTab = effectiveTab;
   indicatorsView.classList.toggle("hidden", effectiveTab !== "indicators");
   issuesView.classList.toggle("hidden", effectiveTab !== "issues");
+  winsView.classList.toggle("hidden", effectiveTab !== "wins");
   tabIndicators.classList.toggle("active", effectiveTab === "indicators");
   tabIssues.classList.toggle("active", effectiveTab === "issues");
+  tabWins.classList.toggle("active", effectiveTab === "wins");
   if (effectiveTab === "issues" && shouldLoad) {
     await loadIssueReports();
+  }
+  if (effectiveTab === "wins" && shouldLoad) {
+    await loadWins();
   }
 }
 
@@ -442,6 +481,33 @@ function populateIssueAreaOptions() {
   otherOption.value = "__other__";
   otherOption.textContent = "Outras";
   issueAreaSelect.appendChild(otherOption);
+}
+
+function populateWinAreaOptions() {
+  winAreaSelect.innerHTML = "";
+  state.areas.forEach((area) => {
+    const option = document.createElement("option");
+    option.value = area.id;
+    option.textContent = area.name;
+    winAreaSelect.appendChild(option);
+  });
+  const otherOption = document.createElement("option");
+  otherOption.value = "__other__";
+  otherOption.textContent = "Outras";
+  winAreaSelect.appendChild(otherOption);
+}
+
+async function loadWins() {
+  if (!canUseIssueReports()) {
+    return;
+  }
+  if (state.areas.length === 0) {
+    await ensureAreasLoaded();
+  }
+  populateWinAreaOptions();
+  state.wins = await api("/api/wins");
+  populateWinFilters();
+  renderWins();
 }
 
 function resetIssueTagForm() {
@@ -655,6 +721,123 @@ function renderIssueReports() {
   issuesTable.appendChild(tbody);
 }
 
+function populateWinFilters() {
+  const currentRequester = winRequesterFilter.value || "";
+  const currentArea = winAreaFilter.value || "";
+  const requesters = new Map();
+  const areas = new Map();
+  state.wins.forEach((win) => {
+    requesters.set(win.requester_id, win.requester_name || win.requester_id);
+    areas.set(win.is_other_area ? "__other__" : win.area_id, issueAreaLabel(win));
+  });
+
+  winRequesterFilter.innerHTML = '<option value="">Todos</option>';
+  Array.from(requesters.entries())
+    .sort((a, b) => normalizeText(a[1]).localeCompare(normalizeText(b[1]), "pt-BR"))
+    .forEach(([id, name]) => {
+      const option = document.createElement("option");
+      option.value = id;
+      option.textContent = name;
+      option.selected = id === currentRequester;
+      winRequesterFilter.appendChild(option);
+    });
+
+  winAreaFilter.innerHTML = '<option value="">Todas</option>';
+  Array.from(areas.entries())
+    .sort((a, b) => normalizeText(a[1]).localeCompare(normalizeText(b[1]), "pt-BR"))
+    .forEach(([id, name]) => {
+      const option = document.createElement("option");
+      option.value = id || "";
+      option.textContent = name;
+      option.selected = id === currentArea;
+      winAreaFilter.appendChild(option);
+    });
+
+  winTitleSuggestions.innerHTML = "";
+  state.wins.forEach((win) => {
+    const option = document.createElement("option");
+    option.value = win.title;
+    winTitleSuggestions.appendChild(option);
+  });
+}
+
+function getFilteredWins() {
+  const titleSearch = normalizeText(winTitleFilter.value);
+  const requesterId = winRequesterFilter.value;
+  const areaId = winAreaFilter.value;
+  const status = winStatusFilter.value;
+  const dateFrom = winDateFrom.value ? new Date(`${winDateFrom.value}T00:00:00`) : null;
+  const dateTo = winDateTo.value ? new Date(`${winDateTo.value}T23:59:59`) : null;
+
+  return state.wins
+    .filter((win) => {
+      const createdAt = issueCreatedDate(win);
+      const winAreaId = win.is_other_area ? "__other__" : win.area_id;
+      return (!titleSearch || normalizeText(win.title).includes(titleSearch))
+        && (!requesterId || win.requester_id === requesterId)
+        && (!areaId || winAreaId === areaId)
+        && (!status || win.status === status)
+        && (!dateFrom || createdAt >= dateFrom)
+        && (!dateTo || createdAt <= dateTo);
+    })
+    .sort((a, b) => issueCreatedDate(b).getTime() - issueCreatedDate(a).getTime());
+}
+
+function renderWins() {
+  const isExecutive = state.user && state.user.role === "executivo";
+  const wins = getFilteredWins();
+  const thead = document.createElement("thead");
+  thead.innerHTML = "<tr><th>Titulo</th><th>Solicitante</th><th>Area</th><th>Status</th><th>Data</th><th>Acoes</th></tr>";
+  const tbody = document.createElement("tbody");
+
+  wins.forEach((win) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(win.title)}</td>
+      <td>${escapeHtml(win.requester_name || win.requester_id)}</td>
+      <td>${escapeHtml(issueAreaLabel(win))}</td>
+      <td></td>
+      <td>${issueCreatedDate(win).toLocaleDateString("pt-BR")}</td>
+      <td></td>
+    `;
+
+    const statusCell = tr.children[3];
+    if (isExecutive) {
+      statusCell.appendChild(buildWinStatusSelect(win));
+    } else {
+      statusCell.textContent = win.status;
+    }
+
+    const actionsWrapper = document.createElement("div");
+    actionsWrapper.className = "issue-actions";
+    const detailButton = document.createElement("button");
+    detailButton.type = "button";
+    detailButton.textContent = "Ver";
+    detailButton.addEventListener("click", () => showWinDetail(win));
+    actionsWrapper.appendChild(detailButton);
+    if (isExecutive) {
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "danger";
+      deleteButton.textContent = "Apagar";
+      deleteButton.addEventListener("click", async () => deleteWin(win));
+      actionsWrapper.appendChild(deleteButton);
+    }
+    tr.children[5].appendChild(actionsWrapper);
+    tbody.appendChild(tr);
+  });
+
+  if (wins.length === 0) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="6" class="muted">Nenhuma Win encontrada.</td>';
+    tbody.appendChild(tr);
+  }
+
+  winsTable.innerHTML = "";
+  winsTable.appendChild(thead);
+  winsTable.appendChild(tbody);
+}
+
 function buildTagBadges(tags) {
   const wrapper = document.createElement("div");
   wrapper.className = "tag-badges";
@@ -836,6 +1019,33 @@ function buildIssueStatusSelect(issue) {
   return select;
 }
 
+function buildWinStatusSelect(win) {
+  const select = document.createElement("select");
+  ["Concluído", "Em atendimento", "Em Planejamento", "Delegada", "Recusada", "Não Iniciada"]
+    .forEach((status) => {
+      const option = document.createElement("option");
+      option.value = status;
+      option.textContent = status;
+      option.selected = status === win.status;
+      select.appendChild(option);
+    });
+  select.addEventListener("change", async () => {
+    const previousStatus = win.status;
+    try {
+      await api(`/api/wins/${win.id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: select.value }),
+      });
+      await loadWins();
+      setStatus("Status da Win atualizado.", "success");
+    } catch (error) {
+      select.value = previousStatus;
+      setStatus(error.message, "error");
+    }
+  });
+  return select;
+}
+
 function calculateExecutivePriorityScore() {
   const gravity = Number(issueExecutiveGravity.value);
   const urgency = Number(issueExecutiveUrgency.value);
@@ -869,6 +1079,28 @@ function showIssueDetail(issue) {
     <section><strong>Proposta de Solucao</strong><p>${escapeHtml(issue.proposta_solucao)}</p></section>
   `;
   issueDetailPanel.classList.remove("hidden");
+}
+
+function showWinDetail(win) {
+  issueDetailTitle.textContent = win.title;
+  issueDetailBody.innerHTML = `
+    <section><strong>Descricao</strong><p>${escapeHtml(win.description)}</p></section>
+    <section><strong>Area</strong><p>${escapeHtml(issueAreaLabel(win))}</p></section>
+    <section><strong>Solicitante</strong><p>${escapeHtml(win.requester_name || win.requester_id)}</p></section>
+    <section><strong>Status</strong><p>${escapeHtml(win.status)}</p></section>
+    <section><strong>Criado em</strong><p>${issueCreatedDate(win).toLocaleString("pt-BR")}</p></section>
+  `;
+  issueDetailPanel.classList.remove("hidden");
+}
+
+async function deleteWin(win) {
+  const confirmed = window.confirm(`Apagar a Win "${win.title}" da visualizacao?`);
+  if (!confirmed) {
+    return;
+  }
+  await api(`/api/wins/${win.id}`, { method: "DELETE" });
+  await loadWins();
+  setStatus("Win apagada da visualizacao.", "success");
 }
 
 function setExecutiveIndicatorActionMode(mode) {
@@ -931,6 +1163,12 @@ function renderIndicators() {
   maturityHeader.textContent = "Maturidade";
   maturityHeader.className = "sticky-col sticky-col-header sticky-col-maturity";
   headerRow.appendChild(maturityHeader);
+
+  ["Confianca", "Meta Anual", "Projetado Anual", "Real Anual"].forEach((label) => {
+    const th = document.createElement("th");
+    th.textContent = label;
+    headerRow.appendChild(th);
+  });
 
   monthsLabels.forEach((label, index) => {
     const th = document.createElement("th");
@@ -995,10 +1233,47 @@ function renderIndicators() {
     if (areaTint) {
       maturityCell.style.backgroundColor = areaTint;
     }
-    maturityCell.textContent = row.maturity_level === null || row.maturity_level === undefined
-      ? "-"
-      : `${formatNumber(row.maturity_level)}%`;
+    maturityCell.appendChild(buildPerformanceBadge(
+      row.maturity_level,
+      row.maturity_classification,
+    ));
     tr.appendChild(maturityCell);
+
+    const confidenceCell = document.createElement("td");
+    confidenceCell.appendChild(buildPerformanceBadge(
+      row.confidence_level,
+      row.confidence_classification,
+    ));
+    if (isExecutive) {
+      confidenceCell.classList.add("clickable");
+      confidenceCell.addEventListener("click", () => openAnnualPlanningModal(row));
+    }
+    tr.appendChild(confidenceCell);
+
+    const annualTargetCell = document.createElement("td");
+    annualTargetCell.textContent = formatNumber(row.annual_target);
+    if (isExecutive) {
+      annualTargetCell.classList.add("clickable");
+      annualTargetCell.addEventListener("click", () => openAnnualPlanningModal(row));
+    }
+    tr.appendChild(annualTargetCell);
+
+    const annualProjectedCell = document.createElement("td");
+    annualProjectedCell.appendChild(buildPerformanceBadge(
+      row.annual_projected,
+      row.projected_achievement_classification,
+    ));
+    if (row.projected_achievement_percent !== null && row.projected_achievement_percent !== undefined) {
+      const percentNode = document.createElement("div");
+      percentNode.className = "month-target";
+      percentNode.textContent = `${formatNumber(row.projected_achievement_percent)}%`;
+      annualProjectedCell.appendChild(percentNode);
+    }
+    tr.appendChild(annualProjectedCell);
+
+    const annualRealCell = document.createElement("td");
+    annualRealCell.textContent = formatNumber(row.annual_real);
+    tr.appendChild(annualRealCell);
 
     for (let month = 1; month <= 12; month += 1) {
       const monthCell = document.createElement("td");
@@ -1031,7 +1306,7 @@ function renderIndicators() {
   if (visibleIndicators.length === 0) {
     const emptyRow = document.createElement("tr");
     const emptyCell = document.createElement("td");
-    emptyCell.colSpan = 15;
+    emptyCell.colSpan = 19;
     emptyCell.textContent = "Nenhum indicador encontrado para o filtro selecionado.";
     emptyCell.className = "muted";
     emptyRow.appendChild(emptyCell);
@@ -1403,6 +1678,25 @@ async function submitIssueReport(event) {
   setStatus("Issue Report criado com sucesso.", "success");
 }
 
+async function submitWin(event) {
+  event.preventDefault();
+  const areaValue = winAreaSelect.value;
+  const payload = {
+    title: document.getElementById("win-title").value,
+    area_id: areaValue === "__other__" ? null : areaValue,
+    is_other_area: areaValue === "__other__",
+    description: document.getElementById("win-description").value,
+  };
+  await api("/api/wins", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  winForm.reset();
+  winForm.classList.add("hidden");
+  await loadWins();
+  setStatus("Win criada com sucesso.", "success");
+}
+
 function logout(showMessage = true) {
   state.token = "";
   state.user = null;
@@ -1413,6 +1707,7 @@ function logout(showMessage = true) {
   state.executiveIndicatorActionMode = "none";
   state.issueReports = [];
   state.issueTags = [];
+  state.wins = [];
   state.activeTab = "indicators";
   localStorage.removeItem("psc_token");
   applyLoggedOutView();
@@ -1516,6 +1811,8 @@ document.getElementById("reload-btn").addEventListener("click", async () => {
   try {
     if (state.activeTab === "issues") {
       await loadIssueReports();
+    } else if (state.activeTab === "wins") {
+      await loadWins();
     } else {
       await loadIndicators();
     }
@@ -1541,6 +1838,14 @@ tabIssues.addEventListener("click", async () => {
   }
 });
 
+tabWins.addEventListener("click", async () => {
+  try {
+    await showAppTab("wins");
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+});
+
 document.getElementById("new-issue-btn").addEventListener("click", async () => {
   try {
     if (state.areas.length === 0) {
@@ -1558,9 +1863,34 @@ document.getElementById("cancel-issue-btn").addEventListener("click", () => {
   issueForm.classList.add("hidden");
 });
 
+document.getElementById("new-win-btn").addEventListener("click", async () => {
+  try {
+    if (state.areas.length === 0) {
+      await ensureAreasLoaded();
+    }
+    populateWinAreaOptions();
+    winForm.classList.remove("hidden");
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+});
+
+document.getElementById("cancel-win-btn").addEventListener("click", () => {
+  winForm.reset();
+  winForm.classList.add("hidden");
+});
+
 issueForm.addEventListener("submit", async (event) => {
   try {
     await submitIssueReport(event);
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+});
+
+winForm.addEventListener("submit", async (event) => {
+  try {
+    await submitWin(event);
   } catch (error) {
     setStatus(error.message, "error");
   }
@@ -1570,6 +1900,12 @@ issueForm.addEventListener("submit", async (event) => {
   .forEach((element) => {
     element.addEventListener("input", renderIssueReports);
     element.addEventListener("change", renderIssueReports);
+  });
+
+[winDateFrom, winDateTo, winRequesterFilter, winAreaFilter, winTitleFilter, winStatusFilter]
+  .forEach((element) => {
+    element.addEventListener("input", renderWins);
+    element.addEventListener("change", renderWins);
   });
 
 manageTagsBtn.addEventListener("click", () => {
@@ -1714,6 +2050,14 @@ const mpProjectedValue = document.getElementById("mp-projected-value");
 const mpTargetValue = document.getElementById("mp-target-value");
 const mpCancel = document.getElementById("mp-cancel");
 const monthlyPlanningTitle = document.getElementById("monthly-planning-title");
+const annualPlanningPanel = document.getElementById("annual-planning-panel");
+const annualPlanningForm = document.getElementById("annual-planning-form");
+const apnIndicatorId = document.getElementById("apn-indicator-id");
+const apnYear = document.getElementById("apn-year");
+const apnAnnualTarget = document.getElementById("apn-annual-target");
+const apnConfidenceLevel = document.getElementById("apn-confidence-level");
+const apnCancel = document.getElementById("apn-cancel");
+const annualPlanningTitle = document.getElementById("annual-planning-title");
 
 function openMonthlyPlanningModal(row, month) {
   const monthName = monthsLabels[month - 1];
@@ -1748,6 +2092,22 @@ function openMonthlyPlanningModal(row, month) {
   }
 
   monthlyPlanningPanel.classList.remove("hidden");
+}
+
+function openAnnualPlanningModal(row) {
+  if (!(state.user && state.user.role === "executivo")) {
+    return;
+  }
+  apnIndicatorId.value = row.indicator_id;
+  apnYear.value = String(state.year);
+  apnAnnualTarget.value = row.annual_target === null || row.annual_target === undefined
+    ? ""
+    : String(row.annual_target);
+  apnConfidenceLevel.value = row.confidence_level === null || row.confidence_level === undefined
+    ? ""
+    : String(row.confidence_level);
+  annualPlanningTitle.textContent = `${formatIndicatorDisplayName(row)} - ${state.year}`;
+  annualPlanningPanel.classList.remove("hidden");
 }
 
 monthlyPlanningForm.addEventListener("submit", async (event) => {
@@ -1797,6 +2157,30 @@ monthlyPlanningForm.addEventListener("submit", async (event) => {
 
 mpCancel.addEventListener("click", () => {
   monthlyPlanningPanel.classList.add("hidden");
+});
+
+annualPlanningForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const indicatorId = apnIndicatorId.value;
+    await api(`/api/indicators/${indicatorId}/annual-planning`, {
+      method: "POST",
+      body: JSON.stringify({
+        year: Number(apnYear.value),
+        annual_target: apnAnnualTarget.value.trim() || null,
+        confidence_level: apnConfidenceLevel.value.trim() || null,
+      }),
+    });
+    annualPlanningPanel.classList.add("hidden");
+    await loadIndicators();
+    setStatus("Planejamento anual salvo com sucesso.", "success");
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+});
+
+apnCancel.addEventListener("click", () => {
+  annualPlanningPanel.classList.add("hidden");
 });
 
 // === Area Management Modal ===

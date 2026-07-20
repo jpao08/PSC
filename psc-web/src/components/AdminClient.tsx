@@ -169,6 +169,8 @@ export default function AdminClient({ initialUser }: { initialUser: User }) {
             Perfil
             <select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as Role })}>
               <option value="gestor_area">Gestor de Área</option>
+              <option value="gestor_tatico">Gestor Tático</option>
+              <option value="gestor_operacional">Gestor Operacional</option>
               <option value="executivo">Executivo</option>
               <option value="executivo_visualizacao">Executivo Visualização</option>
             </select>

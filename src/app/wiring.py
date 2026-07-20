@@ -10,6 +10,7 @@ from adapters.output.supabase_repositories import (
     SupabaseIndicatorRepository,
     SupabaseIssueReportRepository,
     SupabaseUserRepository,
+    SupabaseWinReportRepository,
 )
 from core.ports.repositories import (
     ActionPlanRepositoryPort,
@@ -17,6 +18,7 @@ from core.ports.repositories import (
     IssueReportRepositoryPort,
     SessionPort,
     UserRepositoryPort,
+    WinReportRepositoryPort,
 )
 from core.ports.task_gateway import TaskGatewayPort
 from core.use_cases.authenticate_user import AuthenticateUser
@@ -24,11 +26,14 @@ from core.use_cases.create_action_plan import CreateActionPlan
 from core.use_cases.create_area import CreateArea
 from core.use_cases.create_indicator import CreateIndicator
 from core.use_cases.create_issue_report import CreateIssueReport
+from core.use_cases.create_win_report import CreateWinReport
 from core.use_cases.delete_area import DeleteArea
 from core.use_cases.delete_indicator import DeleteIndicator
 from core.use_cases.delete_issue_report import DeleteIssueReport
+from core.use_cases.delete_win_report import DeleteWinReport
 from core.use_cases.list_indicators import ListIndicators
 from core.use_cases.list_issue_reports import ListIssueReports
+from core.use_cases.list_win_reports import ListWinReports
 from core.use_cases.register_indicator_value import RegisterIndicatorValue
 from core.use_cases.search_bitrix_users import SearchBitrixUsers
 from core.use_cases.set_indicator_month_not_applicable import SetIndicatorMonthNotApplicable
@@ -54,6 +59,7 @@ class Container:
     indicator_repository: IndicatorRepositoryPort
     action_plan_repository: ActionPlanRepositoryPort
     issue_report_repository: IssueReportRepositoryPort
+    win_report_repository: WinReportRepositoryPort
     task_gateway: TaskGatewayPort
     authenticate_user: AuthenticateUser
     list_indicators: ListIndicators
@@ -61,9 +67,12 @@ class Container:
     create_action_plan: CreateActionPlan
     create_indicator: CreateIndicator
     create_issue_report: CreateIssueReport
+    create_win_report: CreateWinReport
     list_issue_reports: ListIssueReports
+    list_win_reports: ListWinReports
     update_issue_report_executive_review: UpdateIssueReportExecutiveReview
     delete_issue_report: DeleteIssueReport
+    delete_win_report: DeleteWinReport
     update_indicator: UpdateIndicator
     delete_indicator: DeleteIndicator
     create_area: CreateArea
@@ -91,6 +100,7 @@ def build_container() -> Container:
     indicator_repository = SupabaseIndicatorRepository(client=supabase_client)
     action_plan_repository = SupabaseActionPlanRepository(client=supabase_client)
     issue_report_repository = SupabaseIssueReportRepository(client=supabase_client)
+    win_report_repository = SupabaseWinReportRepository(client=supabase_client)
     user_directory = None
     if users_supabase_client is not None and settings.users_supabase_table:
         user_directory = SupabaseBitrixUserDirectory(
@@ -116,6 +126,7 @@ def build_container() -> Container:
         indicator_repository=indicator_repository,
         action_plan_repository=action_plan_repository,
         issue_report_repository=issue_report_repository,
+        win_report_repository=win_report_repository,
         task_gateway=task_gateway,
         authenticate_user=AuthenticateUser(
             user_repository=user_repository,
@@ -133,11 +144,17 @@ def build_container() -> Container:
             issue_report_repository=issue_report_repository,
             indicator_repository=indicator_repository,
         ),
+        create_win_report=CreateWinReport(
+            win_report_repository=win_report_repository,
+            indicator_repository=indicator_repository,
+        ),
         list_issue_reports=ListIssueReports(issue_report_repository=issue_report_repository),
+        list_win_reports=ListWinReports(win_report_repository=win_report_repository),
         update_issue_report_executive_review=UpdateIssueReportExecutiveReview(
             issue_report_repository=issue_report_repository
         ),
         delete_issue_report=DeleteIssueReport(issue_report_repository=issue_report_repository),
+        delete_win_report=DeleteWinReport(win_report_repository=win_report_repository),
         update_indicator=UpdateIndicator(indicator_repository=indicator_repository),
         delete_indicator=DeleteIndicator(indicator_repository=indicator_repository),
         create_area=CreateArea(indicator_repository=indicator_repository),

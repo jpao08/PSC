@@ -49,6 +49,7 @@
         <nav id="app-tabs" class="app-tabs hidden">
           <button id="tab-indicators" type="button" class="tab-btn active" data-tab="indicators">Indicadores</button>
           <button id="tab-issues" type="button" class="tab-btn" data-tab="issues">Issue Reports</button>
+          <button id="tab-wins" type="button" class="tab-btn" data-tab="wins">Wins</button>
         </nav>
 
         <section id="indicators-view" class="card app-view">
@@ -333,6 +334,66 @@
             <table id="issues-table"></table>
           </div>
         </section>
+
+        <section id="wins-view" class="card app-view hidden">
+          <div class="toolbar">
+            <h2>Wins</h2>
+            <div class="toolbar-actions">
+              <button id="new-win-btn" type="button">Nova Win</button>
+            </div>
+          </div>
+
+          <form id="win-form" class="form-grid hidden">
+            <label>
+              Titulo
+              <input id="win-title" required />
+            </label>
+            <label>
+              Area
+              <select id="win-area-id" required></select>
+            </label>
+            <label>
+              Descricao
+              <textarea
+                id="win-description"
+                placeholder="Descreva a conquista, resultado positivo ou melhoria observada."
+                required
+              ></textarea>
+            </label>
+            <div class="toolbar-actions">
+              <button type="submit">Salvar Win</button>
+              <button id="cancel-win-btn" type="button">Cancelar</button>
+            </div>
+          </form>
+
+          <div id="win-filters" class="toolbar-actions filters-row">
+            <label>Data inicial <input id="win-date-from" type="date" /></label>
+            <label>Data final <input id="win-date-to" type="date" /></label>
+            <label>Solicitante <select id="win-requester-filter"></select></label>
+            <label>Area <select id="win-area-filter"></select></label>
+            <label>
+              Buscar Win
+              <input id="win-title-filter" list="win-title-suggestions" />
+              <datalist id="win-title-suggestions"></datalist>
+            </label>
+            <label>
+              Status
+              <select id="win-status-filter">
+                <option value="">Todos</option>
+                <option value="Não Iniciada">Não Iniciada</option>
+                <option value="Em Planejamento">Em Planejamento</option>
+                <option value="Em atendimento">Em atendimento</option>
+                <option value="Delegada">Delegada</option>
+                <option value="Recusada">Recusada</option>
+                <option value="Concluído">Concluído</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="table-wrap">
+            <table id="wins-table"></table>
+          </div>
+        </section>
       </section>
 
       <!-- Monthly Planning Modal -->
@@ -362,6 +423,32 @@
             <div class="toolbar-actions">
               <button id="mp-submit" type="submit">Salvar</button>
               <button id="mp-cancel" type="button" class="secondary">Cancelar</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- Annual Planning Modal -->
+      <section id="annual-planning-panel" class="card hidden modal-overlay">
+        <div class="modal-content">
+          <h2>Planejamento Anual</h2>
+          <p id="annual-planning-title" class="muted"></p>
+          <form id="annual-planning-form" class="form-grid">
+            <input id="apn-indicator-id" type="hidden" />
+            <input id="apn-year" type="hidden" />
+
+            <label>
+              Meta Anual
+              <input id="apn-annual-target" type="number" step="0.01" />
+            </label>
+            <label>
+              Confianca
+              <input id="apn-confidence-level" type="number" min="0" max="100" step="0.01" />
+            </label>
+
+            <div class="toolbar-actions">
+              <button type="submit">Salvar</button>
+              <button id="apn-cancel" type="button" class="secondary">Cancelar</button>
             </div>
           </form>
         </div>

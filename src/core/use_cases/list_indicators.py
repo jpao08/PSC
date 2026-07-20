@@ -4,7 +4,14 @@ from collections import defaultdict
 from decimal import Decimal
 
 from core.domain.models import IndicatorTableRow, User
-from core.domain.rules import calculate_monthly_value, ensure_user_active, get_user_area_ids
+from core.domain.rules import (
+    calculate_achievement_percent,
+    calculate_annual_value,
+    calculate_monthly_value,
+    classify_performance,
+    ensure_user_active,
+    get_user_area_ids,
+)
 from core.ports.repositories import IndicatorRepositoryPort
 
 
@@ -14,7 +21,11 @@ class ListIndicators:
 
     def execute(self, user: User, year: int) -> list[IndicatorTableRow]:
         ensure_user_active(user)
-        area_filter = get_user_area_ids(user) if user.role == "gestor_area" else None
+        area_filter = (
+            get_user_area_ids(user)
+            if user.role in {"gestor_area", "gestor_tatico", "gestor_operacional"}
+            else None
+        )
         indicators = self.indicator_repository.list_active(area_ids=area_filter)
         indicator_ids = [indicator.id for indicator in indicators]
         values = self.indicator_repository.list_weekly_values(
@@ -30,6 +41,10 @@ class ListIndicators:
             year=year,
         )
         not_applicable_items = self.indicator_repository.list_month_not_applicable(
+            indicator_ids=indicator_ids,
+            year=year,
+        )
+        year_planning = self.indicator_repository.list_year_planning(
             indicator_ids=indicator_ids,
             year=year,
         )
@@ -49,6 +64,10 @@ class ListIndicators:
         not_applicable_map = {
             (item.indicator_id, item.month): True
             for item in not_applicable_items
+        }
+        year_planning_map = {
+            item.indicator_id: item
+            for item in year_planning
         }
 
         rows: list[IndicatorTableRow] = []
@@ -81,6 +100,23 @@ class ListIndicators:
                     and monthly_values[month] < monthly_targets[month]
                 )
 
+            planning = year_planning_map.get(indicator.id)
+            annual_target = planning.annual_target if planning else None
+            confidence_level = planning.confidence_level if planning else None
+            real_values = [
+                (month, value)
+                for month, value in monthly_values.items()
+                if value is not None
+            ]
+            projected_values = [
+                (month, monthly_values[month] if monthly_values[month] is not None else projected)
+                for month, projected in monthly_projections.items()
+                if monthly_values[month] is not None or projected is not None
+            ]
+            annual_real = calculate_annual_value(real_values, indicator.aggregation_type)
+            annual_projected = calculate_annual_value(projected_values, indicator.aggregation_type)
+            achievement = calculate_achievement_percent(annual_projected, annual_target)
+
             rows.append(
                 IndicatorTableRow(
                     indicator_id=indicator.id,
@@ -98,6 +134,14 @@ class ListIndicators:
                     monthly_targets=monthly_targets,
                     not_applicable=not_applicable,
                     below_target=below_target,
+                    annual_target=annual_target,
+                    annual_projected=annual_projected,
+                    annual_real=annual_real,
+                    confidence_level=confidence_level,
+                    projected_achievement_percent=achievement,
+                    maturity_classification=classify_performance(indicator.maturity_level),
+                    confidence_classification=classify_performance(confidence_level),
+                    projected_achievement_classification=classify_performance(achievement),
                 )
             )
         rows.sort(

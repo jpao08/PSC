@@ -111,6 +111,8 @@ function renderUsers() {
 function formatRole(role) {
   const labels = {
     gestor_area: "Gestor de Area",
+    gestor_tatico: "Gestor Tatico",
+    gestor_operacional: "Gestor Operacional",
     executivo: "Executivo",
     executivo_visualizacao: "Executivo Visualizacao",
   };

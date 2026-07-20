@@ -34,6 +34,7 @@ describe("ProvisionBitrixUser", () => {
     const repository: UserRepositoryPort = {
       getById: async () => null,
       getByBitrixIdentity: async () => null,
+      listByNormalizedEmail: async () => [],
       listUsers: async () => [],
       deactivateUser: async () => undefined,
       upsertFromBitrix: async (input) => ({

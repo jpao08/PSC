@@ -22,7 +22,13 @@ import {
   UserRepositoryPort,
   WinReportRepositoryPort
 } from "@/core/ports/repositories";
-import { calculateMonthlyValue, getUserAreaIds } from "@/core/domain/rules";
+import {
+  calculateAchievementPercent,
+  calculateAnnualValue,
+  calculateMonthlyValue,
+  classifyPerformance,
+  getUserAreaIds
+} from "@/core/domain/rules";
 
 type Row = Record<string, unknown>;
 
@@ -57,6 +63,15 @@ export class SupabaseUserRepository implements UserRepositoryPort {
     return data?.[0] ? this.toUser(data[0]) : null;
   }
 
+  async listByNormalizedEmail(email: string): Promise<User[]> {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) return [];
+    const { data, error } = await this.client.from("users").select("*").ilike("email", normalized);
+    if (error) throw error;
+    const users = await Promise.all((data ?? []).map((row) => this.toUser(row)));
+    return users.filter((user) => user.email.trim().toLowerCase() === normalized);
+  }
+
   async listUsers(): Promise<User[]> {
     const { data, error } = await this.client.from("users").select("*").order("name");
     if (error) throw error;
@@ -65,7 +80,15 @@ export class SupabaseUserRepository implements UserRepositoryPort {
   }
 
   async upsertFromBitrix(payload: AdminUserPayload): Promise<User> {
-    const existing = await this.getByBitrixIdentity(payload.bitrixUser.id, payload.bitrixUser.portalDomain ?? null);
+    const existingByIdentity = await this.getByBitrixIdentity(payload.bitrixUser.id, payload.bitrixUser.portalDomain ?? null);
+    const existingByEmail = payload.bitrixUser.email
+      ? await this.listByNormalizedEmail(payload.bitrixUser.email)
+      : [];
+    const distinctByEmail = existingByEmail.filter((user) => user.id !== existingByIdentity?.id);
+    if ((existingByIdentity && distinctByEmail.length > 0) || distinctByEmail.length > 1) {
+      throw new Error("Email ja esta associado a multiplos usuarios PSC. Resolva a duplicidade antes de habilitar acesso Web.");
+    }
+    const existing = existingByIdentity ?? distinctByEmail[0] ?? null;
     const areaIds = [...new Set(payload.areaIds.filter(Boolean))];
     const userPayload = {
       bitrix_user_id: payload.bitrixUser.id,
@@ -356,6 +379,17 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
     return (data ?? []).map((row) => ({ indicatorId: asString(row.indicator_id), month: Number(row.month) }));
   }
 
+  async listYearPlanning(indicatorIds: string[], year: number) {
+    if (indicatorIds.length === 0) return [];
+    const { data, error } = await this.client.from("indicator_year_planning").select("*").in("indicator_id", indicatorIds).eq("year", year);
+    if (error) throw error;
+    return (data ?? []).map((row) => ({
+      indicatorId: asString(row.indicator_id),
+      annualTarget: asNumber(row.annual_target),
+      confidenceLevel: asNumber(row.confidence_level)
+    }));
+  }
+
   async upsertMonthProjection(indicatorId: string, year: number, month: number, projectedValue: number, userId: string): Promise<void> {
     const { error } = await this.client.from("indicator_month_projections").upsert(
       {
@@ -430,28 +464,35 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
     if (error) throw error;
   }
 
+  async upsertYearPlanning(indicatorId: string, year: number, annualTarget: number | null, confidenceLevel: number | null, userId: string): Promise<void> {
+    const { error } = await this.client.from("indicator_year_planning").upsert(
+      {
+        indicator_id: indicatorId,
+        year,
+        annual_target: annualTarget,
+        confidence_level: confidenceLevel,
+        updated_by: userId,
+        created_by: userId
+      },
+      { onConflict: "indicator_id,year" }
+    );
+    if (error) throw error;
+  }
+
   async listIndicatorTable(user: User, year: number): Promise<IndicatorTableRow[]> {
-    const areaFilter = user.role === "gestor_area" ? getUserAreaIds(user) : null;
+    const areaFilter = ["gestor_area", "gestor_tatico", "gestor_operacional"].includes(user.role) ? getUserAreaIds(user) : null;
     const indicators = await this.listActive(areaFilter);
     const ids = indicators.map((indicator) => indicator.id);
     const values = await this.listWeeklyValues(ids, year);
     const targets = await this.listMonthTargets(ids, year);
     const projections = await this.listMonthProjections(ids, year);
     const notApplicable = await this.listMonthNotApplicable(ids, year);
+    const yearPlanning = await this.listYearPlanning(ids, year);
 
     return indicators
-      .map((indicator) => ({
-        indicatorId: indicator.id,
-        indicatorName: indicator.name,
-        areaId: indicator.areaId,
-        areaName: indicator.areaName,
-        areaHexColor: indicator.areaHexColor,
-        description: indicator.description,
-        aggregationType: indicator.aggregationType,
-        unitId: indicator.unitId,
-        unit: indicator.unit,
-        maturityLevel: indicator.maturityLevel,
-        months: Array.from({ length: 12 }, (_, index) => {
+      .map((indicator) => {
+        const planning = yearPlanning.find((item) => item.indicatorId === indicator.id) ?? null;
+        const months = Array.from({ length: 12 }, (_, index) => {
           const month = index + 1;
           const isNotApplicable = notApplicable.some((item) => item.indicatorId === indicator.id && item.month === month);
           const monthlyValue = isNotApplicable
@@ -472,8 +513,40 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
             notApplicable: isNotApplicable,
             belowTarget: !isNotApplicable && monthlyValue != null && monthlyTarget != null && monthlyValue < monthlyTarget
           };
-        })
-      }))
+        });
+        const annualReal = calculateAnnualValue(
+          months.filter((item) => item.value != null).map((item) => ({ month: item.month, value: item.value as number })),
+          indicator.aggregationType
+        );
+        const annualProjected = calculateAnnualValue(
+          months
+            .filter((item) => item.value != null || item.projectedValue != null)
+            .map((item) => ({ month: item.month, value: (item.value ?? item.projectedValue) as number })),
+          indicator.aggregationType
+        );
+        const projectedAchievementPercent = calculateAchievementPercent(annualProjected, planning?.annualTarget ?? null);
+        return {
+          indicatorId: indicator.id,
+          indicatorName: indicator.name,
+          areaId: indicator.areaId,
+          areaName: indicator.areaName,
+          areaHexColor: indicator.areaHexColor,
+          description: indicator.description,
+          aggregationType: indicator.aggregationType,
+          unitId: indicator.unitId,
+          unit: indicator.unit,
+          maturityLevel: indicator.maturityLevel,
+          annualTarget: planning?.annualTarget ?? null,
+          annualProjected,
+          annualReal,
+          confidenceLevel: planning?.confidenceLevel ?? null,
+          projectedAchievementPercent,
+          maturityClassification: classifyPerformance(indicator.maturityLevel),
+          confidenceClassification: classifyPerformance(planning?.confidenceLevel ?? null),
+          projectedAchievementClassification: classifyPerformance(projectedAchievementPercent),
+          months
+        };
+      })
       .sort((left, right) => `${left.areaName ?? left.areaId} ${left.indicatorName}`.localeCompare(`${right.areaName ?? right.areaId} ${right.indicatorName}`));
   }
 
@@ -801,12 +874,9 @@ export class SupabaseWinReportRepository implements WinReportRepositoryPort {
     requesterId: string;
     areaId: string | null;
     isOtherArea: boolean;
-    requesterGravity: number;
-    requesterUrgency: number;
-    requesterTendency: number;
     ocorrencia: string;
-    identificacaoCausa: string;
-    propostaSolucao: string;
+    identificacaoCausa?: string;
+    propostaSolucao?: string;
   }): Promise<WinReport> {
     const { data, error } = await this.client
       .from("wins")
@@ -815,12 +885,12 @@ export class SupabaseWinReportRepository implements WinReportRepositoryPort {
         requester_id: input.requesterId,
         area_id: input.areaId,
         is_other_area: input.isOtherArea,
-        requester_gravity: input.requesterGravity,
-        requester_urgency: input.requesterUrgency,
-        requester_tendency: input.requesterTendency,
+        requester_gravity: 1,
+        requester_urgency: 1,
+        requester_tendency: 1,
         ocorrencia: input.ocorrencia,
-        identificacao_causa: input.identificacaoCausa,
-        proposta_solucao: input.propostaSolucao
+        identificacao_causa: input.identificacaoCausa ?? "",
+        proposta_solucao: input.propostaSolucao ?? ""
       })
       .select("*")
       .single();

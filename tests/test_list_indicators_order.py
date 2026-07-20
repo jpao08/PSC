@@ -31,6 +31,9 @@ class FakeIndicatorRepository:
     def list_month_not_applicable(self, indicator_ids: list[str], year: int) -> list:
         return []
 
+    def list_year_planning(self, indicator_ids: list[str], year: int) -> list:
+        return []
+
 
 def test_list_indicators_sorted_by_area_and_name() -> None:
     repository = FakeIndicatorRepository(

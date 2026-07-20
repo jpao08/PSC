@@ -4,12 +4,15 @@ import {
   AuthorizationError,
   Indicator,
   IssueStatus,
+  PerformanceClassification,
   Role,
   User,
   ValidationError
 } from "./models";
 
-const validRoles = new Set<Role>(["gestor_area", "executivo", "executivo_visualizacao"]);
+const areaScopedRoles = new Set<Role>(["gestor_area", "gestor_tatico", "gestor_operacional"]);
+const globalViewRoles = new Set<Role>(["executivo", "executivo_visualizacao"]);
+const validRoles = new Set<Role>([...areaScopedRoles, ...globalViewRoles]);
 const validAggregations = new Set<AggregationType>(["sum", "avg", "latest"]);
 const validIssueStatuses = new Set<string>([
   "Nao Iniciada",
@@ -57,8 +60,8 @@ export function getUserAreaIds(user: User): string[] {
 }
 
 export function ensureCanViewIndicator(user: User, indicator: Indicator): void {
-  if (user.role === "executivo" || user.role === "executivo_visualizacao") return;
-  if (user.role === "gestor_area" && getUserAreaIds(user).includes(indicator.areaId)) return;
+  if (globalViewRoles.has(user.role)) return;
+  if (areaScopedRoles.has(user.role) && getUserAreaIds(user).includes(indicator.areaId)) return;
   throw new AuthorizationError("Usuario sem permissao para acessar este indicador.");
 }
 
@@ -169,4 +172,38 @@ export function calculateMonthlyValue(
     totalDays += days;
   }
   return totalDays === 0 ? null : weightedTotal / totalDays;
+}
+
+export function validateConfidenceLevel(value: number | null): number | null {
+  if (value == null) return null;
+  if (!Number.isFinite(value) || value < 0 || value > 100) {
+    throw new ValidationError("Confianca deve estar entre 0 e 100.");
+  }
+  return value;
+}
+
+export function classifyPerformance(value: number | null): PerformanceClassification {
+  if (value == null || Number.isNaN(value)) return "neutral";
+  if (value <= 30) return "not_reliable";
+  if (value <= 50) return "fragile";
+  if (value <= 70) return "functional";
+  if (value <= 90) return "reliable";
+  return "strategic";
+}
+
+export function calculateAchievementPercent(value: number | null, target: number | null): number | null {
+  if (value == null || target == null || target === 0) return null;
+  return (value / target) * 100;
+}
+
+export function calculateAnnualValue(
+  values: Array<{ month: number; value: number }>,
+  aggregationType: AggregationType
+): number | null {
+  if (values.length === 0) return null;
+  if (aggregationType === "sum") return values.reduce((total, item) => total + item.value, 0);
+  if (aggregationType === "latest") {
+    return [...values].sort((left, right) => right.month - left.month)[0]?.value ?? null;
+  }
+  return values.reduce((total, item) => total + item.value, 0) / values.length;
 }

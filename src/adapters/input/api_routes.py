@@ -23,11 +23,14 @@ from core.domain.models import (
     IssueTag,
     User,
     ValidationError,
+    WinReport,
 )
 from core.domain.rules import (
     ensure_can_use_issue_reports,
     ensure_can_view_indicator,
+    ensure_confidence_level,
     ensure_hex_color_or_none,
+    ensure_issue_status,
     ensure_required_text,
     ensure_role,
     ensure_user_active,
@@ -100,6 +103,12 @@ class MonthlyNotApplicablePayload(BaseModel):
     is_not_applicable: bool
 
 
+class AnnualPlanningPayload(BaseModel):
+    year: int
+    annual_target: str | None = None
+    confidence_level: str | None = None
+
+
 class CreateIssueReportPayload(BaseModel):
     title: str
     area_id: str | None = None
@@ -110,6 +119,13 @@ class CreateIssueReportPayload(BaseModel):
     ocorrencia: str
     identificacao_causa: str
     proposta_solucao: str
+
+
+class CreateWinReportPayload(BaseModel):
+    title: str
+    area_id: str | None = None
+    is_other_area: bool = False
+    description: str
 
 
 class IssueExecutiveReviewPayload(BaseModel):
@@ -228,6 +244,23 @@ def _serialize_issue_tag(tag: IssueTag) -> dict[str, Any]:
         "name": tag.name,
         "color": tag.color,
         "is_active": tag.is_active,
+    }
+
+
+def _serialize_win_report(win: WinReport) -> dict[str, Any]:
+    return {
+        "id": win.id,
+        "title": win.title,
+        "requester_id": win.requester_id,
+        "requester_name": win.requester_name,
+        "area_id": win.area_id,
+        "area_name": "Outras" if win.is_other_area else win.area_name,
+        "is_other_area": win.is_other_area,
+        "description": win.description,
+        "status": win.status,
+        "created_at": win.created_at.isoformat(),
+        "reviewed_by": win.reviewed_by,
+        "reviewed_at": win.reviewed_at.isoformat() if win.reviewed_at else None,
     }
 
 
@@ -506,6 +539,18 @@ def create_api_router(container: Container) -> APIRouter:
                     "unit_id": row.unit_id,
                     "unit": row.unit,
                     "maturity_level": _decimal_to_float(row.maturity_level),
+                    "annual_target": _decimal_to_float(row.annual_target),
+                    "annual_projected": _decimal_to_float(row.annual_projected),
+                    "annual_real": _decimal_to_float(row.annual_real),
+                    "confidence_level": _decimal_to_float(row.confidence_level),
+                    "projected_achievement_percent": _decimal_to_float(
+                        row.projected_achievement_percent
+                    ),
+                    "maturity_classification": row.maturity_classification,
+                    "confidence_classification": row.confidence_classification,
+                    "projected_achievement_classification": (
+                        row.projected_achievement_classification
+                    ),
                     "months": months,
                 }
             )
@@ -520,6 +565,63 @@ def create_api_router(container: Container) -> APIRouter:
         except DomainError as error:
             raise _to_http_error(error) from error
         return [_serialize_issue_report(issue) for issue in issues]
+
+    @router.get("/wins")
+    def list_wins(
+        current_user: User = Depends(get_current_user),
+    ) -> list[dict[str, Any]]:
+        try:
+            wins = container.list_win_reports.execute(user=current_user)
+        except DomainError as error:
+            raise _to_http_error(error) from error
+        return [_serialize_win_report(win) for win in wins]
+
+    @router.post("/wins")
+    def create_win(
+        payload: CreateWinReportPayload,
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        try:
+            win = container.create_win_report.execute(
+                user=current_user,
+                title=payload.title,
+                area_id=payload.area_id,
+                is_other_area=payload.is_other_area,
+                description=payload.description,
+            )
+        except DomainError as error:
+            raise _to_http_error(error) from error
+        return _serialize_win_report(win)
+
+    @router.patch("/wins/{win_id}/status")
+    def update_win_status(
+        win_id: str,
+        payload: IssueExecutiveReviewPayload,
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        try:
+            ensure_user_active(current_user)
+            ensure_role(current_user, "executivo")
+            status_value = ensure_issue_status(payload.status) if payload.status is not None else None
+            win = container.win_report_repository.update_win_status(
+                win_id=win_id,
+                status=status_value,
+                reviewed_by=current_user.id,
+            )
+        except DomainError as error:
+            raise _to_http_error(error) from error
+        return _serialize_win_report(win)
+
+    @router.delete("/wins/{win_id}")
+    def delete_win(
+        win_id: str,
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, str]:
+        try:
+            container.delete_win_report.execute(user=current_user, win_id=win_id)
+        except DomainError as error:
+            raise _to_http_error(error) from error
+        return {"status": "deleted"}
 
     @router.get("/issue-tags")
     def list_issue_tags(
@@ -940,6 +1042,37 @@ def create_api_router(container: Container) -> APIRouter:
             "year": payload.year,
             "month": payload.month,
             "not_applicable": payload.is_not_applicable,
+        }
+
+    @router.post("/indicators/{indicator_id}/annual-planning")
+    def upsert_annual_planning(
+        indicator_id: str,
+        payload: AnnualPlanningPayload,
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        try:
+            annual_target = _parse_optional_decimal(payload.annual_target, "annual_target")
+            confidence_level = ensure_confidence_level(
+                _parse_optional_decimal(payload.confidence_level, "confidence_level")
+            )
+            ensure_role(current_user, "executivo")
+            saved = container.indicator_repository.upsert_year_planning(
+                indicator_id=indicator_id,
+                year=payload.year,
+                annual_target=annual_target,
+                confidence_level=confidence_level,
+                user_id=current_user.id,
+            )
+        except DomainError as error:
+            raise _to_http_error(error) from error
+
+        return {
+            "indicator_id": saved.indicator_id,
+            "year": saved.year,
+            "annual_target": _decimal_to_float(saved.annual_target),
+            "confidence_level": _decimal_to_float(saved.confidence_level),
+            "created_by": saved.created_by,
+            "updated_by": saved.updated_by,
         }
 
     @router.post("/system/shutdown")

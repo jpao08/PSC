@@ -88,6 +88,12 @@ type MaturityEditorState = {
   maturityLevel: string;
 };
 
+type AnnualPlanningState = {
+  row: IndicatorTableRow;
+  annualTarget: string;
+  confidenceLevel: string;
+};
+
 type AreaFormState = {
   mode: "create" | "edit" | "delete";
   id: string;
@@ -145,6 +151,23 @@ const emptyAreaForm: AreaFormState = {
 function formatNumber(value: number | null): string {
   if (value == null || Number.isNaN(value)) return "-";
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value);
+}
+
+const performanceLabels: Record<string, string> = {
+  neutral: "Nao informado",
+  not_reliable: "Nao confiavel",
+  fragile: "Fragil",
+  functional: "Funcional",
+  reliable: "Confiavel",
+  strategic: "Estrategico"
+};
+
+function PerformanceBadge({ value, classification }: { value: number | null; classification: string }) {
+  return (
+    <span className={`performance-badge performance-${classification}`} title={performanceLabels[classification] ?? classification}>
+      {formatNumber(value)}
+    </span>
+  );
 }
 
 function hexToRgba(hex: string | null, alpha: number): string {
@@ -213,7 +236,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
   const [winDateFrom, setWinDateFrom] = useState("");
   const [winDateTo, setWinDateTo] = useState("");
   const [winTagFilter, setWinTagFilter] = useState<string[]>([]);
-  const [winSort, setWinSort] = useState<IssueSortMode>("executive");
+  const [winSort, setWinSort] = useState<IssueSortMode>("date");
   const [showIssueForm, setShowIssueForm] = useState(false);
   const [showTagsPanel, setShowTagsPanel] = useState(false);
   const [showWinForm, setShowWinForm] = useState(false);
@@ -225,6 +248,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
   const [winTagForm, setWinTagForm] = useState<IssueTagFormState>(emptyTagForm);
   const [indicatorForm, setIndicatorForm] = useState<IndicatorFormState | null>(null);
   const [maturityEditor, setMaturityEditor] = useState<MaturityEditorState | null>(null);
+  const [annualPlanning, setAnnualPlanning] = useState<AnnualPlanningState | null>(null);
   const [areaForm, setAreaForm] = useState<AreaFormState | null>(null);
   const [selectedIssue, setSelectedIssue] = useState<IssueReport | null>(null);
   const [selectedWin, setSelectedWin] = useState<WinReport | null>(null);
@@ -266,6 +290,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
   const isExecutive = user.role === "executivo";
   const canEditMaturity = isExecutive || user.canEditIndicatorMaturity;
   const canAdmin = user.role === "executivo" || user.canAdminUsers;
+  const currentMonth = year === new Date().getFullYear() ? new Date().getMonth() + 1 : null;
 
   const filteredIndicators = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -458,6 +483,16 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
     setStatus(`Planejamento mensal de ${row.indicatorName} em ${months[month - 1]}/${year}.`);
   }
 
+  function openAnnualPlanning(row: IndicatorTableRow) {
+    if (!isExecutive) return;
+    setAnnualPlanning({
+      row,
+      annualTarget: String(row.annualTarget ?? ""),
+      confidenceLevel: String(row.confidenceLevel ?? "")
+    });
+    setStatus(`Planejamento anual de ${row.indicatorName}/${year}.`);
+  }
+
   async function saveIndicatorModal() {
     if (!weeklyEditor) return;
     try {
@@ -537,6 +572,26 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
       setStatus("Planejamento mensal salvo.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Falha ao salvar planejamento mensal.");
+    }
+  }
+
+  async function saveAnnualPlanning(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!annualPlanning) return;
+    try {
+      await api(`/api/indicators/${annualPlanning.row.indicatorId}/annual-planning`, {
+        method: "POST",
+        body: JSON.stringify({
+          year,
+          annualTarget: annualPlanning.annualTarget,
+          confidenceLevel: annualPlanning.confidenceLevel
+        })
+      });
+      setAnnualPlanning(null);
+      await loadIndicators();
+      setStatus("Planejamento anual salvo.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao salvar planejamento anual.");
     }
   }
 
@@ -654,10 +709,10 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
       await api<WinReport>("/api/wins", {
         method: "POST",
         body: JSON.stringify({
-          ...winForm,
-          requesterGravity: Number(winForm.requesterGravity),
-          requesterUrgency: Number(winForm.requesterUrgency),
-          requesterTendency: Number(winForm.requesterTendency)
+          title: winForm.title,
+          areaId: winForm.areaId,
+          isOtherArea: winForm.isOtherArea,
+          description: winForm.ocorrencia
         })
       });
       setWinForm(emptyIssueForm);
@@ -1078,7 +1133,13 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                   <th className="sticky-col sticky-col-header sticky-col-indicator">Indicador</th>
                   <th className="sticky-col sticky-col-header sticky-col-area">Area</th>
                   <th className="sticky-col sticky-col-header sticky-col-maturity">Maturidade</th>
-                  {months.map((month) => <th key={month}>{month}</th>)}
+                  <th>Confiança</th>
+                  <th>Meta Anual</th>
+                  <th>Projetado Anual</th>
+                  <th>Real Anual</th>
+                  {months.map((month, index) => (
+                    <th key={month} className={currentMonth === index + 1 ? "current-month" : ""}>{month}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -1101,12 +1162,21 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                       onClick={() => openMaturityEditor(row)}
                       title={canEditMaturity ? "Editar maturidade" : undefined}
                     >
-                      {formatNumber(row.maturityLevel)}
+                      <PerformanceBadge value={row.maturityLevel} classification={row.maturityClassification} />
                     </td>
+                    <td className={isExecutive ? "clickable-cell" : ""} onClick={() => openAnnualPlanning(row)} title={isExecutive ? "Editar planejamento anual" : undefined}>
+                      <PerformanceBadge value={row.confidenceLevel} classification={row.confidenceClassification} />
+                    </td>
+                    <td className={isExecutive ? "clickable-cell" : ""} onClick={() => openAnnualPlanning(row)}>{formatNumber(row.annualTarget)}</td>
+                    <td>
+                      <PerformanceBadge value={row.annualProjected} classification={row.projectedAchievementClassification} />
+                      <span className="month-target">{row.projectedAchievementPercent == null ? "" : `${formatNumber(row.projectedAchievementPercent)}%`}</span>
+                    </td>
+                    <td>{formatNumber(row.annualReal)}</td>
                     {row.months.map((item) => (
                       <td
                         key={item.month}
-                        className={`${item.belowTarget ? "below-target-cell" : ""} ${canEditIndicator(row) || isExecutive ? "clickable-cell" : ""}`.trim()}
+                        className={`${item.belowTarget ? "below-target-cell" : ""} ${currentMonth === item.month ? "current-month" : ""} ${canEditIndicator(row) || isExecutive ? "clickable-cell" : ""}`.trim()}
                         onClick={() => (isExecutive ? openMonthlyPlanning(row, item.month) : openWeeklyEditor(row, item.month))}
                         title={isExecutive ? "Cadastrar planejamento mensal" : canEditIndicator(row) ? "Editar valores" : undefined}
                       >
@@ -1440,43 +1510,9 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                   </select>
                 </label>
               ) : null}
-              <fieldset className="gut-fieldset">
-                <legend>Prioridade da Win</legend>
-                <div className="gut-inputs">
-                  <label>
-                    Gravidade
-                    <select required value={winForm.requesterGravity} onChange={(event) => setWinForm({ ...winForm, requesterGravity: event.target.value })}>
-                      <option value="">Selecione</option>
-                      {gutOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    Urgencia
-                    <select required value={winForm.requesterUrgency} onChange={(event) => setWinForm({ ...winForm, requesterUrgency: event.target.value })}>
-                      <option value="">Selecione</option>
-                      {gutOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    Tendencia
-                    <select required value={winForm.requesterTendency} onChange={(event) => setWinForm({ ...winForm, requesterTendency: event.target.value })}>
-                      <option value="">Selecione</option>
-                      {gutOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                    </select>
-                  </label>
-                </div>
-              </fieldset>
               <label>
-                Ocorrencia / contexto
+                Descricao
                 <textarea required value={winForm.ocorrencia} onChange={(event) => setWinForm({ ...winForm, ocorrencia: event.target.value })} />
-              </label>
-              <label>
-                Identificacao da causa
-                <textarea required value={winForm.identificacaoCausa} onChange={(event) => setWinForm({ ...winForm, identificacaoCausa: event.target.value })} />
-              </label>
-              <label>
-                Proposta de Solucao
-                <textarea required value={winForm.propostaSolucao} onChange={(event) => setWinForm({ ...winForm, propostaSolucao: event.target.value })} />
               </label>
               <div className="toolbar-actions">
                 <button type="submit">Salvar Win</button>
@@ -1537,8 +1573,6 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
             <label>
               Ordenar por
               <select value={winSort} onChange={(event) => setWinSort(event.target.value as IssueSortMode)}>
-                <option value="executive">Prioridade executiva</option>
-                <option value="requester">Prioridade solicitante</option>
                 <option value="date">Data</option>
               </select>
             </label>
@@ -1552,8 +1586,6 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                   <th>Solicitante</th>
                   <th>Area</th>
                   <th>Tags</th>
-                  <th>Prior. Solicitante</th>
-                  <th>Prior. Executivo</th>
                   <th>Status</th>
                   <th>Data</th>
                   <th>Acoes</th>
@@ -1584,27 +1616,6 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                         </span>
                       )}
                     </td>
-                    <td>{win.requesterPriorityScore}</td>
-                    <td>
-                      {isExecutive ? (
-                        <button
-                          type="button"
-                          className="priority-cell-button"
-                          onClick={() =>
-                            setWinPriorityEditor({
-                              win,
-                              gravity: win.executiveGravity == null ? "" : String(win.executiveGravity),
-                              urgency: win.executiveUrgency == null ? "" : String(win.executiveUrgency),
-                              tendency: win.executiveTendency == null ? "" : String(win.executiveTendency)
-                            })
-                          }
-                        >
-                          {win.executivePriorityScore ?? "Priorizar"}
-                        </button>
-                      ) : (
-                        win.executivePriorityScore ?? "-"
-                      )}
-                    </td>
                     <td>
                       {isExecutive ? (
                         <select value={formatStatus(win.status)} onChange={(event) => updateWinStatus(win, event.target.value)}>
@@ -1623,7 +1634,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                     </td>
                   </tr>
                 ))}
-                {filteredWins.length === 0 ? <tr><td colSpan={9} className="muted">Nenhuma Win encontrada.</td></tr> : null}
+                {filteredWins.length === 0 ? <tr><td colSpan={7} className="muted">Nenhuma Win encontrada.</td></tr> : null}
               </tbody>
             </table>
           </div>
@@ -1943,6 +1954,41 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
         </section>
       ) : null}
 
+      {annualPlanning ? (
+        <section className="modal-overlay">
+          <div className="modal-content">
+            <h2>Planejamento anual</h2>
+            <p className="muted">{annualPlanning.row.indicatorName} - {year}</p>
+            <form className="form-grid" onSubmit={saveAnnualPlanning}>
+              <label>
+                Meta anual
+                <input
+                  type="number"
+                  step="0.01"
+                  value={annualPlanning.annualTarget}
+                  onChange={(event) => setAnnualPlanning({ ...annualPlanning, annualTarget: event.target.value })}
+                />
+              </label>
+              <label>
+                Confianca
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={annualPlanning.confidenceLevel}
+                  onChange={(event) => setAnnualPlanning({ ...annualPlanning, confidenceLevel: event.target.value })}
+                />
+              </label>
+              <div className="toolbar-actions">
+                <button type="submit">Salvar planejamento</button>
+                <button type="button" className="secondary" onClick={() => setAnnualPlanning(null)}>Fechar</button>
+              </div>
+            </form>
+          </div>
+        </section>
+      ) : null}
+
       {priorityEditor ? (
         <section className="modal-overlay">
           <div className="modal-content">
@@ -2049,19 +2095,11 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
         <section className="modal-overlay">
           <div className="modal-content issue-detail-body">
             <h2>{selectedWin.title}</h2>
-            <p className="muted">
-              {issueAreaLabel(selectedWin)} - Prioridade {selectedWin.executivePriorityScore ?? selectedWin.requesterPriorityScore}
-            </p>
+            <p className="muted">{issueAreaLabel(selectedWin)}</p>
             <p><strong>Status:</strong> {formatStatus(selectedWin.status)}</p>
             <p><strong>Solicitante:</strong> {selectedWin.requesterName ?? "-"}</p>
-            <p><strong>GUT solicitante:</strong> G{selectedWin.requesterGravity} - U{selectedWin.requesterUrgency} - T{selectedWin.requesterTendency}</p>
-            {selectedWin.executivePriorityScore ? (
-              <p><strong>GUT executivo:</strong> G{selectedWin.executiveGravity} - U{selectedWin.executiveUrgency} - T{selectedWin.executiveTendency}</p>
-            ) : null}
             <p><strong>Tags:</strong> {selectedWin.tags.length > 0 ? selectedWin.tags.map((tag) => tag.name).join(", ") : "-"}</p>
-            <p><strong>Ocorrencia / contexto:</strong><br />{selectedWin.ocorrencia}</p>
-            <p><strong>Identificacao da causa:</strong><br />{selectedWin.identificacaoCausa}</p>
-            <p><strong>Proposta de Solucao:</strong><br />{selectedWin.propostaSolucao}</p>
+            <p><strong>Descricao:</strong><br />{selectedWin.ocorrencia}</p>
             <div className="toolbar-actions">
               <button type="button" onClick={() => setSelectedWin(null)}>Fechar</button>
             </div>

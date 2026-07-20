@@ -29,6 +29,7 @@ export type AdminUserPayload = {
 export interface UserRepositoryPort {
   getById(userId: string): Promise<User | null>;
   getByBitrixIdentity(bitrixUserId: string, portalDomain: string | null): Promise<User | null>;
+  listByNormalizedEmail(email: string): Promise<User[]>;
   listUsers(): Promise<User[]>;
   upsertFromBitrix(payload: AdminUserPayload): Promise<User>;
   deactivateUser(userId: string): Promise<void>;
@@ -66,11 +67,13 @@ export interface IndicatorRepositoryPort {
   listMonthTargets(indicatorIds: string[], year: number): Promise<Array<{ indicatorId: string; month: number; targetValue: number }>>;
   listMonthProjections(indicatorIds: string[], year: number): Promise<Array<{ indicatorId: string; month: number; projectedValue: number }>>;
   listMonthNotApplicable(indicatorIds: string[], year: number): Promise<Array<{ indicatorId: string; month: number }>>;
+  listYearPlanning(indicatorIds: string[], year: number): Promise<Array<{ indicatorId: string; annualTarget: number | null; confidenceLevel: number | null }>>;
   upsertMonthProjection(indicatorId: string, year: number, month: number, projectedValue: number, userId: string): Promise<void>;
   deleteMonthProjection(indicatorId: string, year: number, month: number): Promise<void>;
   upsertMonthTarget(indicatorId: string, year: number, month: number, targetValue: number, userId: string): Promise<void>;
   deleteMonthTarget(indicatorId: string, year: number, month: number): Promise<void>;
   setMonthNotApplicable(indicatorId: string, year: number, month: number, notApplicable: boolean, userId: string): Promise<void>;
+  upsertYearPlanning(indicatorId: string, year: number, annualTarget: number | null, confidenceLevel: number | null, userId: string): Promise<void>;
   listIndicatorTable(user: User, year: number): Promise<IndicatorTableRow[]>;
 }
 
@@ -117,12 +120,9 @@ export interface WinReportRepositoryPort {
     requesterId: string;
     areaId: string | null;
     isOtherArea: boolean;
-    requesterGravity: number;
-    requesterUrgency: number;
-    requesterTendency: number;
     ocorrencia: string;
-    identificacaoCausa: string;
-    propostaSolucao: string;
+    identificacaoCausa?: string;
+    propostaSolucao?: string;
   }): Promise<WinReport>;
   updateExecutiveReview(input: {
     winId: string;

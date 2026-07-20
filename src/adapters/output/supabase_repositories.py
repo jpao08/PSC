@@ -21,13 +21,16 @@ from core.domain.models import (
     IndicatorMonthTarget,
     IndicatorUnit,
     IndicatorValue,
+    IndicatorYearPlanning,
     IssueReport,
     IssueTag,
     NotFoundError,
     NewActionPlan,
     NewIssueReport,
     NewIndicator,
+    NewWinReport,
     User,
+    WinReport,
 )
 from core.ports.repositories import (
     ActionPlanRepositoryPort,
@@ -575,6 +578,33 @@ class SupabaseIndicatorRepository(IndicatorRepositoryPort):
             for row in rows
         ]
 
+    def list_year_planning(
+        self,
+        indicator_ids: list[str],
+        year: int,
+    ) -> list[IndicatorYearPlanning]:
+        if not indicator_ids:
+            return []
+        response = (
+            self.client.table("indicator_year_planning")
+            .select("*")
+            .in_("indicator_id", indicator_ids)
+            .eq("year", year)
+            .execute()
+        )
+        rows = response.data or []
+        return [
+            IndicatorYearPlanning(
+                indicator_id=str(row["indicator_id"]),
+                year=int(row["year"]),
+                annual_target=_to_decimal(row.get("annual_target")),
+                confidence_level=_to_decimal(row.get("confidence_level")),
+                created_by=str(row["created_by"]) if row.get("created_by") else None,
+                updated_by=str(row["updated_by"]) if row.get("updated_by") else None,
+            )
+            for row in rows
+        ]
+
     def upsert_month_target(
         self,
         indicator_id: str,
@@ -731,6 +761,51 @@ class SupabaseIndicatorRepository(IndicatorRepositoryPort):
             self.client.table("indicator_month_not_applicable")
             .upsert(payload, on_conflict="indicator_id,year,month")
             .execute()
+        )
+
+    def upsert_year_planning(
+        self,
+        indicator_id: str,
+        year: int,
+        annual_target: Decimal | None,
+        confidence_level: Decimal | None,
+        user_id: str,
+    ) -> IndicatorYearPlanning:
+        existing_response = (
+            self.client.table("indicator_year_planning")
+            .select("*")
+            .eq("indicator_id", indicator_id)
+            .eq("year", year)
+            .limit(1)
+            .execute()
+        )
+        payload = {
+            "indicator_id": indicator_id,
+            "year": year,
+            "annual_target": str(annual_target) if annual_target is not None else None,
+            "confidence_level": str(confidence_level) if confidence_level is not None else None,
+            "updated_by": user_id,
+        }
+        if existing_response.data:
+            response = (
+                self.client.table("indicator_year_planning")
+                .update(payload)
+                .eq("indicator_id", indicator_id)
+                .eq("year", year)
+                .execute()
+            )
+        else:
+            payload["created_by"] = user_id
+            response = self.client.table("indicator_year_planning").insert(payload).execute()
+
+        row = (response.data or [])[0]
+        return IndicatorYearPlanning(
+            indicator_id=str(row["indicator_id"]),
+            year=int(row["year"]),
+            annual_target=_to_decimal(row.get("annual_target")),
+            confidence_level=_to_decimal(row.get("confidence_level")),
+            created_by=str(row["created_by"]) if row.get("created_by") else None,
+            updated_by=str(row["updated_by"]) if row.get("updated_by") else None,
         )
 
     @staticmethod
@@ -1069,4 +1144,121 @@ class SupabaseIssueReportRepository(IssueReportRepositoryPort):
             reviewed_by=str(row["reviewed_by"]) if row.get("reviewed_by") else None,
             reviewed_at=_parse_datetime_or_none(row.get("reviewed_at")),
             tags=tags or [],
+        )
+
+
+class SupabaseWinReportRepository:
+    def __init__(self, client: Client) -> None:
+        self.client = client
+
+    def create_win_report(self, win: NewWinReport) -> WinReport:
+        payload = {
+            "title": win.title,
+            "requester_id": win.requester_id,
+            "area_id": win.area_id,
+            "is_other_area": win.is_other_area,
+            "requester_gravity": 1,
+            "requester_urgency": 1,
+            "requester_tendency": 1,
+            "ocorrencia": win.description,
+            "identificacao_causa": "",
+            "proposta_solucao": "",
+        }
+        response = self.client.table("wins").insert(payload).execute()
+        return self._to_win_report((response.data or [])[0])
+
+    def list_win_reports(self, requester_id: str | None = None) -> list[WinReport]:
+        query = self.client.table("wins").select("*").eq("is_deleted", False)
+        if requester_id:
+            query = query.eq("requester_id", requester_id)
+        response = query.order("created_at", desc=True).execute()
+        rows = response.data or []
+        if not rows:
+            return []
+
+        user_ids = sorted({str(row["requester_id"]) for row in rows if row.get("requester_id")})
+        area_ids = sorted({str(row["area_id"]) for row in rows if row.get("area_id")})
+        user_map = self._list_user_name_map(user_ids)
+        area_map = self._list_area_name_map(area_ids)
+        return [
+            self._to_win_report(
+                row,
+                requester_name=user_map.get(str(row.get("requester_id"))),
+                area_name=area_map.get(str(row.get("area_id"))),
+            )
+            for row in rows
+        ]
+
+    def update_win_status(
+        self,
+        win_id: str,
+        status: str | None,
+        reviewed_by: str,
+    ) -> WinReport:
+        payload: dict[str, Any] = {
+            "reviewed_by": reviewed_by,
+            "reviewed_at": datetime.now().isoformat(),
+        }
+        if status is not None:
+            payload["status"] = status
+        response = self.client.table("wins").update(payload).eq("id", win_id).execute()
+        if not (response.data or []):
+            raise NotFoundError("Win nao encontrada para atualizacao.")
+        return self._get_win_report_by_id(win_id)
+
+    def soft_delete_win_report(self, win_id: str, deleted_by: str) -> None:
+        payload = {
+            "is_deleted": True,
+            "deleted_by": deleted_by,
+            "deleted_at": datetime.now().isoformat(),
+        }
+        response = self.client.table("wins").update(payload).eq("id", win_id).execute()
+        if not (response.data or []):
+            raise NotFoundError("Win nao encontrada para exclusao.")
+
+    def _list_user_name_map(self, user_ids: list[str]) -> dict[str, str]:
+        if not user_ids:
+            return {}
+        response = self.client.table("users").select("id,name").in_("id", user_ids).execute()
+        return {str(row["id"]): str(row.get("name") or "") for row in response.data or []}
+
+    def _list_area_name_map(self, area_ids: list[str]) -> dict[str, str]:
+        if not area_ids:
+            return {}
+        response = self.client.table("areas").select("id,name").in_("id", area_ids).execute()
+        return {str(row["id"]): str(row.get("name") or "") for row in response.data or []}
+
+    def _get_win_report_by_id(self, win_id: str) -> WinReport:
+        response = self.client.table("wins").select("*").eq("id", win_id).limit(1).execute()
+        rows = response.data or []
+        if not rows:
+            raise NotFoundError("Win nao encontrada.")
+        row = rows[0]
+        requester_name = self._list_user_name_map([str(row["requester_id"])]).get(str(row["requester_id"]))
+        area_name = (
+            self._list_area_name_map([str(row["area_id"])]).get(str(row["area_id"]))
+            if row.get("area_id")
+            else None
+        )
+        return self._to_win_report(row, requester_name=requester_name, area_name=area_name)
+
+    @staticmethod
+    def _to_win_report(
+        row: dict[str, Any],
+        requester_name: str | None = None,
+        area_name: str | None = None,
+    ) -> WinReport:
+        return WinReport(
+            id=str(row["id"]),
+            title=str(row["title"]),
+            requester_id=str(row["requester_id"]),
+            requester_name=requester_name,
+            area_id=str(row["area_id"]) if row.get("area_id") else None,
+            area_name=area_name,
+            is_other_area=bool(row.get("is_other_area", False)),
+            description=str(row.get("ocorrencia") or ""),
+            status=str(row.get("status") or "Nao Iniciada"),
+            created_at=_parse_datetime(row.get("created_at")),
+            reviewed_by=str(row["reviewed_by"]) if row.get("reviewed_by") else None,
+            reviewed_at=_parse_datetime_or_none(row.get("reviewed_at")),
         )
