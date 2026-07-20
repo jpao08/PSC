@@ -187,7 +187,7 @@ td {
   text-align: center;
   padding: 5px 6px;
   min-width: 62px;
-  background: #fff;
+  background: var(--area-row-bg, #fff);
   line-height: 1.18;
   background-clip: padding-box;
 }
@@ -201,7 +201,7 @@ thead th {
 
 .sticky-col {
   position: sticky;
-  background: #fff;
+  background: var(--area-row-bg, #fff);
   z-index: 10;
   background-clip: padding-box;
   box-shadow: 2px 0 0 var(--line), 4px 0 6px rgba(16, 24, 40, 0.08);
@@ -295,7 +295,16 @@ thead th {
 
 th.current-month,
 td.current-month {
-  box-shadow: inset 3px 0 0 #111827, inset -3px 0 0 #111827;
+  border-left: 3px solid #111827;
+  border-right: 3px solid #111827;
+}
+
+th.current-month-top {
+  border-top: 3px solid #111827;
+}
+
+td.current-month-bottom {
+  border-bottom: 3px solid #111827;
 }
 
 .below-target {
@@ -303,7 +312,7 @@ td.current-month {
 }
 
 .below-target-cell {
-  background: #fff5f4;
+  background: var(--area-row-bg, #fff);
 }
 
 .clickable-cell {

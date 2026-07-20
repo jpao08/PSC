@@ -1,6 +1,6 @@
 "use client";
 
-import type { FormEvent } from "react";
+import type { CSSProperties, FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActionPlan,
@@ -176,15 +176,6 @@ function hexToRgba(hex: string | null, alpha: number): string {
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-function hexToTint(hex: string | null, alpha: number): string {
-  if (!hex || !/^#[0-9A-Fa-f]{6}$/.test(hex)) return "#eaf3fd";
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const mix = (channel: number) => Math.round(255 - (255 - channel) * alpha);
-  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
 }
 
 function normalizeText(value: string): string {
@@ -1127,24 +1118,27 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
             </>
           ) : null}
           <div className="table-wrap">
-            <table>
+            <table className="indicator-table">
               <thead>
                 <tr>
                   <th className="sticky-col sticky-col-header sticky-col-indicator">Indicador</th>
                   <th className="sticky-col sticky-col-header sticky-col-area">Area</th>
                   <th className="sticky-col sticky-col-header sticky-col-maturity">Maturidade</th>
-                  <th>Confiança</th>
+                  {months.map((month, index) => (
+                    <th key={month} className={currentMonth === index + 1 ? "current-month current-month-top" : ""}>{month}</th>
+                  ))}
                   <th>Meta Anual</th>
                   <th>Projetado Anual</th>
                   <th>Real Anual</th>
-                  {months.map((month, index) => (
-                    <th key={month} className={currentMonth === index + 1 ? "current-month" : ""}>{month}</th>
-                  ))}
+                  <th>Confiança</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredIndicators.map((row) => (
-                  <tr key={row.indicatorId} style={{ background: hexToRgba(row.areaHexColor, 0.08) }}>
+                {filteredIndicators.map((row, rowIndex) => (
+                  <tr
+                    key={row.indicatorId}
+                    style={{ "--area-row-bg": hexToRgba(row.areaHexColor, 0.08) } as CSSProperties}
+                  >
                     <td className="sticky-col sticky-col-indicator">
                       {isExecutive ? (
                         <button className="indicator-link" type="button" onClick={() => handleExecutiveIndicatorClick(row)} title="Clique para acao executiva">
@@ -1156,7 +1150,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                         </>
                       )}
                     </td>
-                    <td className="sticky-col sticky-col-area" style={{ background: hexToTint(row.areaHexColor, 0.17) }}>{row.areaName ?? row.areaId}</td>
+                    <td className="sticky-col sticky-col-area">{row.areaName ?? row.areaId}</td>
                     <td
                       className={`sticky-col sticky-col-maturity ${canEditMaturity ? "clickable-cell" : ""}`.trim()}
                       onClick={() => openMaturityEditor(row)}
@@ -1164,19 +1158,10 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                     >
                       <PerformanceBadge value={row.maturityLevel} classification={row.maturityClassification} />
                     </td>
-                    <td className={isExecutive ? "clickable-cell" : ""} onClick={() => openAnnualPlanning(row)} title={isExecutive ? "Editar planejamento anual" : undefined}>
-                      <PerformanceBadge value={row.confidenceLevel} classification={row.confidenceClassification} />
-                    </td>
-                    <td className={isExecutive ? "clickable-cell" : ""} onClick={() => openAnnualPlanning(row)}>{formatNumber(row.annualTarget)}</td>
-                    <td>
-                      <PerformanceBadge value={row.annualProjected} classification={row.projectedAchievementClassification} />
-                      <span className="month-target">{row.projectedAchievementPercent == null ? "" : `${formatNumber(row.projectedAchievementPercent)}%`}</span>
-                    </td>
-                    <td>{formatNumber(row.annualReal)}</td>
                     {row.months.map((item) => (
                       <td
                         key={item.month}
-                        className={`${item.belowTarget ? "below-target-cell" : ""} ${currentMonth === item.month ? "current-month" : ""} ${canEditIndicator(row) || isExecutive ? "clickable-cell" : ""}`.trim()}
+                        className={`${item.belowTarget ? "below-target-cell" : ""} ${currentMonth === item.month ? `current-month ${rowIndex === filteredIndicators.length - 1 ? "current-month-bottom" : ""}` : ""} ${canEditIndicator(row) || isExecutive ? "clickable-cell" : ""}`.trim()}
                         onClick={() => (isExecutive ? openMonthlyPlanning(row, item.month) : openWeeklyEditor(row, item.month))}
                         title={isExecutive ? "Cadastrar planejamento mensal" : canEditIndicator(row) ? "Editar valores" : undefined}
                       >
@@ -1187,9 +1172,18 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                         </div>
                       </td>
                     ))}
+                    <td className={isExecutive ? "clickable-cell" : ""} onClick={() => openAnnualPlanning(row)}>{formatNumber(row.annualTarget)}</td>
+                    <td>
+                      <PerformanceBadge value={row.annualProjected} classification={row.projectedAchievementClassification} />
+                      <span className="month-target">{row.projectedAchievementPercent == null ? "" : `${formatNumber(row.projectedAchievementPercent)}%`}</span>
+                    </td>
+                    <td>{formatNumber(row.annualReal)}</td>
+                    <td className={isExecutive ? "clickable-cell" : ""} onClick={() => openAnnualPlanning(row)} title={isExecutive ? "Editar planejamento anual" : undefined}>
+                      <PerformanceBadge value={row.confidenceLevel} classification={row.confidenceClassification} />
+                    </td>
                   </tr>
                 ))}
-                {filteredIndicators.length === 0 ? <tr><td colSpan={15} className="muted">Nenhum indicador encontrado.</td></tr> : null}
+                {filteredIndicators.length === 0 ? <tr><td colSpan={months.length + 7} className="muted">Nenhum indicador encontrado.</td></tr> : null}
               </tbody>
             </table>
           </div>
