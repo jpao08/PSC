@@ -177,18 +177,19 @@ button:disabled {
 .indicator-table-shell {
   display: grid;
   grid-template-columns: 427px minmax(260px, 1fr) 360px;
+  gap: 10px;
   align-items: start;
   min-width: 1040px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
+  overflow: visible;
+  background: transparent;
 }
 
 .indicator-table-panel {
   min-width: 0;
   overflow: hidden;
   background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
 }
 
 .identity-panel,
