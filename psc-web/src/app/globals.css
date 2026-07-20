@@ -174,11 +174,73 @@ button:disabled {
   isolation: isolate;
 }
 
+.indicator-table-shell {
+  display: grid;
+  grid-template-columns: 427px minmax(260px, 1fr) 360px;
+  align-items: start;
+  min-width: 1040px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.indicator-table-panel {
+  min-width: 0;
+  overflow: hidden;
+  background: #fff;
+}
+
+.identity-panel,
+.annual-panel {
+  position: relative;
+  z-index: 2;
+}
+
+.identity-panel {
+  box-shadow: 6px 0 12px rgba(16, 24, 40, 0.08);
+}
+
+.annual-panel {
+  box-shadow: -6px 0 12px rgba(16, 24, 40, 0.08);
+}
+
+.months-panel {
+  overflow-x: auto;
+  overflow-y: hidden;
+  position: relative;
+  z-index: 1;
+}
+
 table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 0.86rem;
+}
+
+.indicator-table-split {
+  table-layout: fixed;
+}
+
+.months-table {
+  min-width: 744px;
+}
+
+.indicator-col {
+  width: 205px;
+}
+
+.area-col {
+  width: 130px;
+}
+
+.maturity-col {
+  width: 92px;
+}
+
+.annual-col {
+  width: 90px;
 }
 
 th,
@@ -197,6 +259,49 @@ thead th {
   top: 0;
   z-index: 5;
   background: #eef3f8;
+}
+
+.indicator-table-split thead th {
+  position: static;
+}
+
+.indicator-table-split .section-header {
+  height: 30px;
+  padding: 6px;
+  background: #f7f9fc;
+  font-weight: 700;
+  color: #344054;
+}
+
+.indicator-table-split thead tr:last-child th {
+  height: 48px;
+}
+
+.indicator-table-split tbody tr {
+  height: 60px;
+}
+
+.indicator-table-split tbody td {
+  height: 60px;
+  max-height: 60px;
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+.indicator-name-cell {
+  text-align: left;
+  line-height: 1.25;
+}
+
+.indicator-name-cell .indicator-link {
+  max-height: 40px;
+  overflow: hidden;
+}
+
+.empty-table-message {
+  padding: 14px;
+  text-align: center;
+  background: #fff;
 }
 
 .sticky-col {

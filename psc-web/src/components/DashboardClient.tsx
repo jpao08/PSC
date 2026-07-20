@@ -1118,74 +1118,117 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
             </>
           ) : null}
           <div className="table-wrap">
-            <table className="indicator-table">
-              <thead>
-                <tr>
-                  <th className="sticky-col sticky-col-header sticky-col-indicator">Indicador</th>
-                  <th className="sticky-col sticky-col-header sticky-col-area">Area</th>
-                  <th className="sticky-col sticky-col-header sticky-col-maturity">Maturidade</th>
-                  {months.map((month, index) => (
-                    <th key={month} className={currentMonth === index + 1 ? "current-month current-month-top" : ""}>{month}</th>
-                  ))}
-                  <th>Meta Anual</th>
-                  <th>Projetado Anual</th>
-                  <th>Real Anual</th>
-                  <th>Confiança</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredIndicators.map((row, rowIndex) => (
-                  <tr
-                    key={row.indicatorId}
-                    style={{ "--area-row-bg": hexToRgba(row.areaHexColor, 0.08) } as CSSProperties}
-                  >
-                    <td className="sticky-col sticky-col-indicator">
-                      {isExecutive ? (
-                        <button className="indicator-link" type="button" onClick={() => handleExecutiveIndicatorClick(row)} title="Clique para acao executiva">
-                          {row.indicatorName}{row.unit ? ` - ${row.unit}` : ""}
-                        </button>
-                      ) : (
-                        <>
-                          {row.indicatorName}{row.unit ? <span className="muted"> - {row.unit}</span> : null}
-                        </>
-                      )}
-                    </td>
-                    <td className="sticky-col sticky-col-area">{row.areaName ?? row.areaId}</td>
-                    <td
-                      className={`sticky-col sticky-col-maturity ${canEditMaturity ? "clickable-cell" : ""}`.trim()}
-                      onClick={() => openMaturityEditor(row)}
-                      title={canEditMaturity ? "Editar maturidade" : undefined}
-                    >
-                      <PerformanceBadge value={row.maturityLevel} classification={row.maturityClassification} />
-                    </td>
-                    {row.months.map((item) => (
-                      <td
-                        key={item.month}
-                        className={`${item.belowTarget ? "below-target-cell" : ""} ${currentMonth === item.month ? `current-month ${rowIndex === filteredIndicators.length - 1 ? "current-month-bottom" : ""}` : ""} ${canEditIndicator(row) || isExecutive ? "clickable-cell" : ""}`.trim()}
-                        onClick={() => (isExecutive ? openMonthlyPlanning(row, item.month) : openWeeklyEditor(row, item.month))}
-                        title={isExecutive ? "Cadastrar planejamento mensal" : canEditIndicator(row) ? "Editar valores" : undefined}
-                      >
-                        <div className="month-cell">
-                          <span className={item.belowTarget ? "month-value below-target" : "month-value"}>{item.notApplicable ? "N/A" : formatNumber(item.value)}</span>
-                          <span className="month-projected">Proj. {formatNumber(item.projectedValue)}</span>
-                          <span className="month-target">Meta {formatNumber(item.monthlyTarget)}</span>
-                        </div>
-                      </td>
+            <div className="indicator-table-shell">
+              <div className="indicator-table-panel identity-panel">
+                <table className="indicator-table indicator-table-split">
+                  <colgroup>
+                    <col className="indicator-col" />
+                    <col className="area-col" />
+                    <col className="maturity-col" />
+                  </colgroup>
+                  <thead>
+                    <tr><th colSpan={3} className="section-header">Identificação</th></tr>
+                    <tr>
+                      <th>Indicador</th>
+                      <th>Area</th>
+                      <th>Maturidade</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredIndicators.map((row) => (
+                      <tr key={row.indicatorId} style={{ "--area-row-bg": hexToRgba(row.areaHexColor, 0.08) } as CSSProperties}>
+                        <td className="indicator-name-cell">
+                          {isExecutive ? (
+                            <button className="indicator-link" type="button" onClick={() => handleExecutiveIndicatorClick(row)} title="Clique para acao executiva">
+                              {row.indicatorName}{row.unit ? ` - ${row.unit}` : ""}
+                            </button>
+                          ) : (
+                            <>
+                              {row.indicatorName}{row.unit ? <span className="muted"> - {row.unit}</span> : null}
+                            </>
+                          )}
+                        </td>
+                        <td>{row.areaName ?? row.areaId}</td>
+                        <td
+                          className={canEditMaturity ? "clickable-cell" : ""}
+                          onClick={() => openMaturityEditor(row)}
+                          title={canEditMaturity ? "Editar maturidade" : undefined}
+                        >
+                          <PerformanceBadge value={row.maturityLevel} classification={row.maturityClassification} />
+                        </td>
+                      </tr>
                     ))}
-                    <td className={isExecutive ? "clickable-cell" : ""} onClick={() => openAnnualPlanning(row)}>{formatNumber(row.annualTarget)}</td>
-                    <td>
-                      <PerformanceBadge value={row.annualProjected} classification={row.projectedAchievementClassification} />
-                      <span className="month-target">{row.projectedAchievementPercent == null ? "" : `${formatNumber(row.projectedAchievementPercent)}%`}</span>
-                    </td>
-                    <td>{formatNumber(row.annualReal)}</td>
-                    <td className={isExecutive ? "clickable-cell" : ""} onClick={() => openAnnualPlanning(row)} title={isExecutive ? "Editar planejamento anual" : undefined}>
-                      <PerformanceBadge value={row.confidenceLevel} classification={row.confidenceClassification} />
-                    </td>
-                  </tr>
-                ))}
-                {filteredIndicators.length === 0 ? <tr><td colSpan={months.length + 7} className="muted">Nenhum indicador encontrado.</td></tr> : null}
-              </tbody>
-            </table>
+                  </tbody>
+                </table>
+              </div>
+              <div className="indicator-table-panel months-panel">
+                <table className="indicator-table indicator-table-split months-table">
+                  <thead>
+                    <tr><th colSpan={months.length} className="section-header">Meses</th></tr>
+                    <tr>
+                      {months.map((month, index) => (
+                        <th key={month} className={currentMonth === index + 1 ? "current-month current-month-top" : ""}>{month}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredIndicators.map((row, rowIndex) => (
+                      <tr key={row.indicatorId} style={{ "--area-row-bg": hexToRgba(row.areaHexColor, 0.08) } as CSSProperties}>
+                        {row.months.map((item) => (
+                          <td
+                            key={item.month}
+                            className={`${item.belowTarget ? "below-target-cell" : ""} ${currentMonth === item.month ? `current-month ${rowIndex === filteredIndicators.length - 1 ? "current-month-bottom" : ""}` : ""} ${canEditIndicator(row) || isExecutive ? "clickable-cell" : ""}`.trim()}
+                            onClick={() => (isExecutive ? openMonthlyPlanning(row, item.month) : openWeeklyEditor(row, item.month))}
+                            title={isExecutive ? "Cadastrar planejamento mensal" : canEditIndicator(row) ? "Editar valores" : undefined}
+                          >
+                            <div className="month-cell">
+                              <span className={item.belowTarget ? "month-value below-target" : "month-value"}>{item.notApplicable ? "N/A" : formatNumber(item.value)}</span>
+                              <span className="month-projected">Proj. {formatNumber(item.projectedValue)}</span>
+                              <span className="month-target">Meta {formatNumber(item.monthlyTarget)}</span>
+                            </div>
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="indicator-table-panel annual-panel">
+                <table className="indicator-table indicator-table-split">
+                  <colgroup>
+                    <col className="annual-col" />
+                    <col className="annual-col" />
+                    <col className="annual-col" />
+                    <col className="annual-col" />
+                  </colgroup>
+                  <thead>
+                    <tr><th colSpan={4} className="section-header">Consolidado Anual</th></tr>
+                    <tr>
+                      <th>Real Anual</th>
+                      <th>Projetado Anual</th>
+                      <th>Meta Anual</th>
+                      <th>Confiança</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredIndicators.map((row) => (
+                      <tr key={row.indicatorId} style={{ "--area-row-bg": hexToRgba(row.areaHexColor, 0.08) } as CSSProperties}>
+                        <td>{formatNumber(row.annualReal)}</td>
+                        <td>
+                          <PerformanceBadge value={row.annualProjected} classification={row.projectedAchievementClassification} />
+                          <span className="month-target">{row.projectedAchievementPercent == null ? "" : `${formatNumber(row.projectedAchievementPercent)}%`}</span>
+                        </td>
+                        <td className={isExecutive ? "clickable-cell" : ""} onClick={() => openAnnualPlanning(row)}>{formatNumber(row.annualTarget)}</td>
+                        <td className={isExecutive ? "clickable-cell" : ""} onClick={() => openAnnualPlanning(row)} title={isExecutive ? "Editar planejamento anual" : undefined}>
+                          <PerformanceBadge value={row.confidenceLevel} classification={row.confidenceClassification} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {filteredIndicators.length === 0 ? <div className="empty-table-message muted">Nenhum indicador encontrado.</div> : null}
           </div>
         </section>
       ) : activeTab === "issues" ? (
