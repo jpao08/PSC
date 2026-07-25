@@ -19,6 +19,11 @@ import { api } from "./api";
 
 const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const issueStatuses = ["Nao Iniciada", "Em Planejamento", "Em atendimento", "Delegada", "Recusada", "Concluido"];
+const issuePlaceholders = {
+  ocorrencia: "Descricao da ocorrencia encontrada (anomalia).",
+  identificacaoCausa: "Dissertacao explicando qual foi a causa da ocorrencia encontrada.",
+  propostaSolucao: "Lista de atividades, datas limite e responsaveis para resolver a ocorrencia de forma definitiva ou paliativa."
+};
 const gutOptions = [
   ["1", "1 - Baixo"],
   ["2", "2 - Moderado"],
@@ -197,6 +202,31 @@ function priorityPreview(gravity: string, urgency: string, tendency: string): st
   const values = [gravity, urgency, tendency].map(Number);
   if (values.some((value) => !Number.isInteger(value) || value < 1 || value > 5)) return "-";
   return String(values[0] * values[1] * values[2]);
+}
+
+function csvCell(value: string | number | null | undefined): string {
+  const text = value == null ? "" : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function toCsv(rows: Array<Array<string | number | null | undefined>>): string {
+  return rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
+}
+
+function downloadCsv(filename: string, rows: Array<Array<string | number | null | undefined>>): void {
+  const blob = new Blob([`\uFEFF${toCsv(rows)}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportDateStamp(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 export default function DashboardClient({ initialUser }: { initialUser: User }) {
@@ -1023,6 +1053,87 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
     }
   }
 
+  function exportIndicatorsCsv() {
+    if (!isExecutive) return;
+    const rows: Array<Array<string | number | null | undefined>> = [
+      [
+        "Indicador",
+        "Area",
+        "Unidade",
+        "Maturidade",
+        "Real Anual",
+        "Projetado Anual",
+        "Meta Anual",
+        "Confianca",
+        ...months.flatMap((month) => [`${month} Real`, `${month} Projetado`, `${month} Meta`, `${month} N/A`])
+      ],
+      ...filteredIndicators.map((row) => [
+        row.indicatorName,
+        row.areaName ?? row.areaId,
+        row.unit,
+        row.maturityLevel,
+        row.annualReal,
+        row.annualProjected,
+        row.annualTarget,
+        row.confidenceLevel,
+        ...row.months.flatMap((month) => [
+          month.value,
+          month.projectedValue,
+          month.monthlyTarget,
+          month.notApplicable ? "Sim" : "Nao"
+        ])
+      ])
+    ];
+    downloadCsv(`psc-indicadores-${year}-${exportDateStamp()}.csv`, rows);
+    setStatus("Exportacao de indicadores gerada.");
+  }
+
+  function exportIssuesCsv() {
+    if (!isExecutive) return;
+    const rows: Array<Array<string | number | null | undefined>> = [
+      [
+        "Titulo",
+        "Solicitante",
+        "Area",
+        "Tags",
+        "Gravidade Solicitante",
+        "Urgencia Solicitante",
+        "Tendencia Solicitante",
+        "Prioridade Solicitante",
+        "Gravidade Executiva",
+        "Urgencia Executiva",
+        "Tendencia Executiva",
+        "Prioridade Executiva",
+        "Status",
+        "Data",
+        "Ocorrencia",
+        "Identificacao da causa",
+        "Proposta de Solucao"
+      ],
+      ...filteredIssues.map((issue) => [
+        issue.title,
+        issue.requesterName ?? issue.requesterId,
+        issueAreaLabel(issue),
+        issue.tags.map((tag) => tag.name).join("; "),
+        issue.requesterGravity,
+        issue.requesterUrgency,
+        issue.requesterTendency,
+        issue.requesterPriorityScore,
+        issue.executiveGravity,
+        issue.executiveUrgency,
+        issue.executiveTendency,
+        issue.executivePriorityScore,
+        formatStatus(issue.status),
+        new Date(issue.createdAt).toLocaleDateString("pt-BR"),
+        issue.ocorrencia,
+        issue.identificacaoCausa,
+        issue.propostaSolucao
+      ])
+    ];
+    downloadCsv(`psc-issues-${exportDateStamp()}.csv`, rows);
+    setStatus("Exportacao de Issues gerada.");
+  }
+
   return (
     <main className="container">
       <h1 className="page-title">
@@ -1093,6 +1204,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
               </div>
               <div className="toolbar-actions indicator-admin-actions">
                 <button type="button" onClick={openIndicatorCreate}>Adicionar Indicador</button>
+                <button type="button" className="secondary" onClick={exportIndicatorsCsv}>Exportar Indicadores CSV</button>
                 <button
                   type="button"
                   className={indicatorActionMode === "edit" ? "" : "secondary"}
@@ -1237,7 +1349,10 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
             <h2>Issue Reports</h2>
             <div className="toolbar-actions">
               {isExecutive ? (
-                <button type="button" className="secondary" onClick={() => setShowTagsPanel((value) => !value)}>Gerenciar Tags</button>
+                <>
+                  <button type="button" className="secondary" onClick={exportIssuesCsv}>Exportar Issues CSV</button>
+                  <button type="button" className="secondary" onClick={() => setShowTagsPanel((value) => !value)}>Gerenciar Tags</button>
+                </>
               ) : null}
               <button type="button" onClick={() => setShowIssueForm((value) => !value)}>Novo Issue</button>
             </div>
@@ -1323,15 +1438,30 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
               </fieldset>
               <label>
                 Ocorrencia
-                <textarea required value={issueForm.ocorrencia} onChange={(event) => setIssueForm({ ...issueForm, ocorrencia: event.target.value })} />
+                <textarea
+                  required
+                  placeholder={issuePlaceholders.ocorrencia}
+                  value={issueForm.ocorrencia}
+                  onChange={(event) => setIssueForm({ ...issueForm, ocorrencia: event.target.value })}
+                />
               </label>
               <label>
                 Identificacao da causa
-                <textarea required value={issueForm.identificacaoCausa} onChange={(event) => setIssueForm({ ...issueForm, identificacaoCausa: event.target.value })} />
+                <textarea
+                  required
+                  placeholder={issuePlaceholders.identificacaoCausa}
+                  value={issueForm.identificacaoCausa}
+                  onChange={(event) => setIssueForm({ ...issueForm, identificacaoCausa: event.target.value })}
+                />
               </label>
               <label>
                 Proposta de Solucao
-                <textarea required value={issueForm.propostaSolucao} onChange={(event) => setIssueForm({ ...issueForm, propostaSolucao: event.target.value })} />
+                <textarea
+                  required
+                  placeholder={issuePlaceholders.propostaSolucao}
+                  value={issueForm.propostaSolucao}
+                  onChange={(event) => setIssueForm({ ...issueForm, propostaSolucao: event.target.value })}
+                />
               </label>
               <div className="toolbar-actions">
                 <button type="submit">Salvar Issue</button>
