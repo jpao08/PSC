@@ -7,6 +7,9 @@ from core.domain.models import (
     ActionPlan,
     ActionPlanHistoryEvent,
     Area,
+    CommercialDrilldownDashboard,
+    CommercialDrilldownItemsPage,
+    CommercialSyncStartResult,
     Indicator,
     IndicatorMonthNotApplicable,
     IndicatorMonthProjection,
@@ -230,6 +233,30 @@ class WinReportRepositoryPort(Protocol):
         ...
 
     def soft_delete_win_report(self, win_id: str, deleted_by: str) -> None:
+        ...
+
+
+class CommercialDrilldownRepositoryPort(Protocol):
+    def get_dashboard(self, year: int) -> CommercialDrilldownDashboard:
+        ...
+
+    def get_items(
+        self,
+        year: int,
+        month: int,
+        metric_key: str,
+        responsible_id: str | None,
+        query: str | None,
+        page: int,
+        page_size: int,
+        sort: str,
+    ) -> CommercialDrilldownItemsPage:
+        ...
+
+    def start_sync(self, triggered_by_user_id: str) -> CommercialSyncStartResult:
+        ...
+
+    def get_sync_status(self) -> dict[str, object]:
         ...
 
 

@@ -17,6 +17,10 @@ from core.domain.models import (
     ActionPlan,
     AuthenticationError,
     AuthorizationError,
+    CommercialDrilldownDashboard,
+    CommercialDrilldownItemsPage,
+    CommercialSyncJob,
+    CommercialSyncStartResult,
     DomainError,
     NotFoundError,
     IssueReport,
@@ -27,6 +31,8 @@ from core.domain.models import (
 )
 from core.domain.rules import (
     ensure_can_use_issue_reports,
+    ensure_can_start_commercial_sync,
+    ensure_can_use_commercial_drilldown,
     ensure_can_view_indicator,
     ensure_confidence_level,
     ensure_hex_color_or_none,
@@ -264,6 +270,104 @@ def _serialize_win_report(win: WinReport) -> dict[str, Any]:
     }
 
 
+def _serialize_commercial_job(job: CommercialSyncJob | None) -> dict[str, Any] | None:
+    if job is None:
+        return None
+    return {
+        "jobId": job.job_id,
+        "jobType": job.job_type,
+        "status": job.status,
+        "startedAt": job.started_at.isoformat() if job.started_at else None,
+        "currentStep": job.current_step,
+        "processedRecords": job.processed_records,
+        "totalRecords": job.total_records,
+        "createdAt": job.created_at.isoformat() if job.created_at else None,
+        "updatedAt": job.updated_at.isoformat() if job.updated_at else None,
+    }
+
+
+def _serialize_commercial_dashboard(
+    dashboard: CommercialDrilldownDashboard,
+) -> dict[str, Any]:
+    return {
+        "year": dashboard.year,
+        "months": dashboard.months,
+        "responsibles": dashboard.responsibles,
+        "metrics": [
+            {
+                "metricKey": metric.metric_key,
+                "label": metric.label,
+                "kind": metric.kind,
+                "unit": metric.unit,
+                "summaryLabel": metric.summary_label,
+                "rows": [
+                    {
+                        "responsibleId": row.responsible_id,
+                        "responsibleName": row.responsible_name,
+                        "responsibleActive": row.responsible_active,
+                        "isTotal": row.is_total,
+                        "months": {
+                            month: _decimal_to_float(value)
+                            for month, value in row.months.items()
+                        },
+                        "annualSummary": _decimal_to_float(row.annual_summary),
+                    }
+                    for row in metric.rows
+                ],
+            }
+            for metric in dashboard.metrics
+        ],
+        "lastSuccessfulSyncAt": (
+            dashboard.last_successful_sync_at.isoformat()
+            if dashboard.last_successful_sync_at
+            else None
+        ),
+        "activeJob": _serialize_commercial_job(dashboard.active_job),
+    }
+
+
+def _serialize_commercial_items(page: CommercialDrilldownItemsPage) -> dict[str, Any]:
+    return {
+        "year": page.year,
+        "month": page.month,
+        "metricKey": page.metric_key,
+        "responsibleId": page.responsible_id,
+        "page": page.page,
+        "pageSize": page.page_size,
+        "totalItems": page.total_items,
+        "items": [
+            {
+                "dealId": item.deal_id,
+                "title": item.title,
+                "responsibleId": item.responsible_id,
+                "responsibleName": item.responsible_name,
+                "responsibleStatus": item.responsible_status,
+                "stageId": item.stage_id,
+                "stageName": item.stage_name,
+                "eventDate": item.event_date.isoformat() if item.event_date else None,
+                "referenceDate": item.reference_date.isoformat() if item.reference_date else None,
+                "quantityContribution": _decimal_to_float(item.quantity_contribution),
+                "monetaryContribution": _decimal_to_float(item.monetary_contribution),
+                "opportunity": _decimal_to_float(item.opportunity),
+                "currencyId": item.currency_id,
+                "bitrixUrl": item.bitrix_url,
+            }
+            for item in page.items
+        ],
+    }
+
+
+def _serialize_commercial_sync_start(
+    result: CommercialSyncStartResult,
+) -> dict[str, Any]:
+    return {
+        "jobId": result.job_id,
+        "status": result.status,
+        "created": result.created,
+        "message": result.message,
+    }
+
+
 def _find_listening_pids_windows(port: int) -> set[int]:
     result = subprocess.run(
         ["netstat", "-ano", "-p", "tcp"],
@@ -385,6 +489,70 @@ def create_api_router(container: Container) -> APIRouter:
     @router.get("/me")
     def me(current_user: User = Depends(get_current_user)) -> dict[str, Any]:
         return _serialize_user(current_user)
+
+    @router.get("/commercial-drilldown")
+    def commercial_drilldown_dashboard(
+        year: int = Query(default=date.today().year),
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        try:
+            ensure_can_use_commercial_drilldown(current_user)
+            return _serialize_commercial_dashboard(
+                container.commercial_drilldown_repository.get_dashboard(year)
+            )
+        except DomainError as error:
+            raise _to_http_error(error) from error
+
+    @router.get("/commercial-drilldown/items")
+    def commercial_drilldown_items(
+        year: int,
+        month: int = Query(ge=1, le=12),
+        metric_key: str = Query(min_length=1),
+        responsible_id: str | None = None,
+        q: str | None = None,
+        page: int = Query(default=1, ge=1),
+        page_size: int = Query(default=25, ge=1, le=100),
+        sort: str = "date_desc",
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        try:
+            ensure_can_use_commercial_drilldown(current_user)
+            return _serialize_commercial_items(
+                container.commercial_drilldown_repository.get_items(
+                    year=year,
+                    month=month,
+                    metric_key=metric_key,
+                    responsible_id=responsible_id,
+                    query=q,
+                    page=page,
+                    page_size=page_size,
+                    sort=sort,
+                )
+            )
+        except DomainError as error:
+            raise _to_http_error(error) from error
+
+    @router.get("/commercial-drilldown/sync-status")
+    def commercial_drilldown_sync_status(
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, object]:
+        try:
+            ensure_can_use_commercial_drilldown(current_user)
+            return container.commercial_drilldown_repository.get_sync_status()
+        except DomainError as error:
+            raise _to_http_error(error) from error
+
+    @router.post("/commercial-drilldown/sync")
+    def start_commercial_drilldown_sync(
+        current_user: User = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        try:
+            ensure_can_start_commercial_sync(current_user)
+            return _serialize_commercial_sync_start(
+                container.commercial_drilldown_repository.start_sync(current_user.id)
+            )
+        except DomainError as error:
+            raise _to_http_error(error) from error
 
     @router.get("/areas")
     def list_areas(current_user: User = Depends(get_current_user)) -> list[dict[str, Any]]:

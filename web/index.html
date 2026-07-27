@@ -48,6 +48,7 @@
 
         <nav id="app-tabs" class="app-tabs hidden">
           <button id="tab-indicators" type="button" class="tab-btn active" data-tab="indicators">Indicadores</button>
+          <button id="tab-commercial" type="button" class="tab-btn" data-tab="commercial">Drill Down Comercial</button>
           <button id="tab-issues" type="button" class="tab-btn" data-tab="issues">Issue Reports</button>
           <button id="tab-wins" type="button" class="tab-btn" data-tab="wins">Wins</button>
         </nav>
@@ -169,6 +170,20 @@
               <button id="ci-cancel" type="button">Cancelar</button>
             </div>
           </form>
+        </section>
+
+        <section id="commercial-view" class="card app-view hidden">
+          <div class="toolbar">
+            <div>
+              <h2>Drill Down Comercial</h2>
+              <p id="commercial-sync-status" class="muted">Ultima sincronizacao: -</p>
+            </div>
+            <div class="toolbar-actions">
+              <button id="commercial-sync-btn" type="button" class="secondary hidden">Sincronizar agora</button>
+              <button id="commercial-reload-btn" type="button">Recarregar</button>
+            </div>
+          </div>
+          <div id="commercial-dashboard"></div>
         </section>
 
         <section id="issues-view" class="card app-view hidden">

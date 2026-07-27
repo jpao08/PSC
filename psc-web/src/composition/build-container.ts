@@ -1,6 +1,7 @@
 import { buildSupabaseClient } from "@/adapters/output/supabase-client";
 import {
   SupabaseActionPlanRepository,
+  SupabaseCommercialDrilldownRepository,
   SupabaseIndicatorRepository,
   SupabaseIssueReportRepository,
   SupabaseUserRepository,
@@ -17,6 +18,7 @@ export function buildContainer() {
   const userRepository = new SupabaseUserRepository(supabase);
   const indicatorRepository = new SupabaseIndicatorRepository(supabase);
   const actionPlanRepository = new SupabaseActionPlanRepository(supabase);
+  const commercialDrilldownRepository = new SupabaseCommercialDrilldownRepository(supabase);
   const issueReportRepository = new SupabaseIssueReportRepository(supabase);
   const winReportRepository = new SupabaseWinReportRepository(supabase);
   const bitrixGateway = new BitrixGateway();
@@ -25,6 +27,7 @@ export function buildContainer() {
     userRepository,
     indicatorRepository,
     actionPlanRepository,
+    commercialDrilldownRepository,
     issueReportRepository,
     winReportRepository,
     bitrixGateway,

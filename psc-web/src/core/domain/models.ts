@@ -193,3 +193,85 @@ export type WinReport = {
   reviewedAt: string | null;
   tags: WinTag[];
 };
+
+export type CommercialMetricKind = "flow" | "stock";
+export type CommercialMetricUnit = "quantity" | "money";
+export type CommercialSyncStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+export type CommercialSyncJob = {
+  jobId: string;
+  jobType: string;
+  status: CommercialSyncStatus;
+  startedAt: string | null;
+  currentStep: string | null;
+  processedRecords: number;
+  totalRecords: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type CommercialDrilldownRow = {
+  responsibleId: string | null;
+  responsibleName: string;
+  responsibleActive: boolean;
+  isTotal?: boolean;
+  months: Record<string, number | null>;
+  annualSummary: number | null;
+};
+
+export type CommercialDrilldownMetric = {
+  metricKey: string;
+  label: string;
+  kind: CommercialMetricKind;
+  unit: CommercialMetricUnit;
+  summaryLabel: string;
+  rows: CommercialDrilldownRow[];
+};
+
+export type CommercialDrilldownDashboard = {
+  year: number;
+  months: number[];
+  responsibles: Array<{
+    responsibleId: string | null;
+    responsibleName: string;
+    active: boolean;
+  }>;
+  metrics: CommercialDrilldownMetric[];
+  lastSuccessfulSyncAt: string | null;
+  activeJob: CommercialSyncJob | null;
+};
+
+export type CommercialDrilldownItem = {
+  dealId: string;
+  title: string | null;
+  responsibleId: string | null;
+  responsibleName: string;
+  responsibleStatus: "active" | "inactive";
+  stageId: string | null;
+  stageName: string | null;
+  eventDate: string | null;
+  referenceDate: string | null;
+  quantityContribution: number | null;
+  monetaryContribution: number | null;
+  opportunity: number | null;
+  currencyId: string | null;
+  bitrixUrl: string | null;
+};
+
+export type CommercialDrilldownItemsPage = {
+  year: number;
+  month: number;
+  metricKey: string;
+  responsibleId: string | null;
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  items: CommercialDrilldownItem[];
+};
+
+export type CommercialSyncStartResult = {
+  jobId: string;
+  status: CommercialSyncStatus;
+  created: boolean;
+  message: string;
+};

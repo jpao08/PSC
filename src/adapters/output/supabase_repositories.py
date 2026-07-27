@@ -15,6 +15,13 @@ from core.domain.models import (
     ActionPlan,
     ActionPlanHistoryEvent,
     Area,
+    CommercialDrilldownDashboard,
+    CommercialDrilldownItem,
+    CommercialDrilldownItemsPage,
+    CommercialDrilldownMetric,
+    CommercialDrilldownRow,
+    CommercialSyncJob,
+    CommercialSyncStartResult,
     Indicator,
     IndicatorMonthNotApplicable,
     IndicatorMonthProjection,
@@ -34,6 +41,7 @@ from core.domain.models import (
 )
 from core.ports.repositories import (
     ActionPlanRepositoryPort,
+    CommercialDrilldownRepositoryPort,
     IndicatorRepositoryPort,
     IssueReportRepositoryPort,
     SessionPort,
@@ -67,6 +75,10 @@ def _parse_datetime_or_none(value: str | None) -> datetime | None:
     if not value:
         return None
     return _parse_datetime(value)
+
+
+def _decimal_map(raw: dict[str, Any] | None) -> dict[str, Decimal | None]:
+    return {str(key): _to_decimal(value) for key, value in (raw or {}).items()}
 
 
 def _b64encode(raw: bytes) -> str:
@@ -117,6 +129,137 @@ class SimpleTokenService(SessionPort):
         if not isinstance(subject, str) or not subject:
             return None
         return subject
+
+
+class SupabaseCommercialDrilldownRepository(CommercialDrilldownRepositoryPort):
+    def __init__(self, client: Client) -> None:
+        self.client = client
+
+    def get_dashboard(self, year: int) -> CommercialDrilldownDashboard:
+        data = self.client.rpc(
+            "get_commercial_drilldown_dashboard",
+            {"target_year": year},
+        ).execute().data
+        return _to_commercial_dashboard(data or {})
+
+    def get_items(
+        self,
+        year: int,
+        month: int,
+        metric_key: str,
+        responsible_id: str | None,
+        query: str | None,
+        page: int,
+        page_size: int,
+        sort: str,
+    ) -> CommercialDrilldownItemsPage:
+        data = self.client.rpc(
+            "get_commercial_drilldown_items",
+            {
+                "target_year": year,
+                "target_month": month,
+                "target_metric_key": metric_key,
+                "target_responsible_id": responsible_id,
+                "q": query,
+                "page": page,
+                "page_size": page_size,
+                "sort": sort,
+            },
+        ).execute().data
+        return _to_commercial_items_page(data or {})
+
+    def start_sync(self, triggered_by_user_id: str) -> CommercialSyncStartResult:
+        data = self.client.rpc(
+            "start_commercial_sync",
+            {"triggered_by_user_id": triggered_by_user_id},
+        ).execute().data or {}
+        return CommercialSyncStartResult(
+            job_id=str(data.get("jobId", "")),
+            status=str(data.get("status", "pending")),  # type: ignore[arg-type]
+            created=bool(data.get("created", False)),
+            message=str(data.get("message", "")),
+        )
+
+    def get_sync_status(self) -> dict[str, object]:
+        return self.client.rpc("get_commercial_sync_status").execute().data or {}
+
+
+def _to_commercial_job(raw: dict[str, Any] | None) -> CommercialSyncJob | None:
+    if not raw:
+        return None
+    return CommercialSyncJob(
+        job_id=str(raw.get("jobId", "")),
+        job_type=str(raw.get("jobType", "")),
+        status=str(raw.get("status", "pending")),  # type: ignore[arg-type]
+        started_at=_parse_datetime_or_none(raw.get("startedAt")),
+        current_step=raw.get("currentStep"),
+        processed_records=int(raw.get("processedRecords") or 0),
+        total_records=int(raw["totalRecords"]) if raw.get("totalRecords") is not None else None,
+        created_at=_parse_datetime_or_none(raw.get("createdAt")),
+        updated_at=_parse_datetime_or_none(raw.get("updatedAt")),
+    )
+
+
+def _to_commercial_dashboard(raw: dict[str, Any]) -> CommercialDrilldownDashboard:
+    return CommercialDrilldownDashboard(
+        year=int(raw.get("year") or 2026),
+        months=[int(month) for month in raw.get("months", [])],
+        responsibles=list(raw.get("responsibles", [])),
+        metrics=[
+            CommercialDrilldownMetric(
+                metric_key=str(metric.get("metricKey", "")),
+                label=str(metric.get("label", "")),
+                kind=str(metric.get("kind", "flow")),  # type: ignore[arg-type]
+                unit=str(metric.get("unit", "quantity")),  # type: ignore[arg-type]
+                summary_label=str(metric.get("summaryLabel", "")),
+                rows=[
+                    CommercialDrilldownRow(
+                        responsible_id=row.get("responsibleId"),
+                        responsible_name=str(row.get("responsibleName", "")),
+                        responsible_active=bool(row.get("responsibleActive", True)),
+                        months=_decimal_map(row.get("months")),
+                        annual_summary=_to_decimal(row.get("annualSummary")),
+                        is_total=bool(row.get("isTotal", False)),
+                    )
+                    for row in metric.get("rows", [])
+                ],
+            )
+            for metric in raw.get("metrics", [])
+        ],
+        last_successful_sync_at=_parse_datetime_or_none(raw.get("lastSuccessfulSyncAt")),
+        active_job=_to_commercial_job(raw.get("activeJob")),
+    )
+
+
+def _to_commercial_items_page(raw: dict[str, Any]) -> CommercialDrilldownItemsPage:
+    return CommercialDrilldownItemsPage(
+        year=int(raw.get("year") or 2026),
+        month=int(raw.get("month") or 1),
+        metric_key=str(raw.get("metricKey", "")),
+        responsible_id=raw.get("responsibleId"),
+        page=int(raw.get("page") or 1),
+        page_size=int(raw.get("pageSize") or 25),
+        total_items=int(raw.get("totalItems") or 0),
+        items=[
+            CommercialDrilldownItem(
+                deal_id=str(item.get("dealId", "")),
+                title=item.get("title"),
+                responsible_id=item.get("responsibleId"),
+                responsible_name=str(item.get("responsibleName", "")),
+                responsible_status=str(item.get("responsibleStatus", "active")),  # type: ignore[arg-type]
+                stage_id=item.get("stageId"),
+                stage_name=item.get("stageName"),
+                event_date=_parse_datetime_or_none(item.get("eventDate")),
+                reference_date=_parse_datetime_or_none(item.get("referenceDate")),
+                quantity_contribution=_to_decimal(item.get("quantityContribution")),
+                monetary_contribution=_to_decimal(item.get("monetaryContribution")),
+                opportunity=_to_decimal(item.get("opportunity")),
+                currency_id=item.get("currencyId"),
+                bitrix_url=item.get("bitrixUrl"),
+            )
+            for item in raw.get("items", [])
+        ],
+    )
 
 
 class SupabaseUserRepository(UserRepositoryPort):

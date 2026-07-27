@@ -4,6 +4,9 @@ import {
   AggregationType,
   Area,
   BitrixUser,
+  CommercialDrilldownDashboard,
+  CommercialDrilldownItemsPage,
+  CommercialSyncStartResult,
   Indicator,
   IndicatorTableRow,
   IndicatorUnit,
@@ -17,6 +20,7 @@ import {
 import {
   ActionPlanRepositoryPort,
   AdminUserPayload,
+  CommercialDrilldownRepositoryPort,
   IndicatorRepositoryPort,
   IssueReportRepositoryPort,
   UserRepositoryPort,
@@ -44,6 +48,56 @@ function asNumber(value: unknown): number | null {
   if (value == null || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+export class SupabaseCommercialDrilldownRepository implements CommercialDrilldownRepositoryPort {
+  constructor(private readonly client: SupabaseClient) {}
+
+  async getDashboard(year: number): Promise<CommercialDrilldownDashboard> {
+    const { data, error } = await this.client.rpc("get_commercial_drilldown_dashboard", {
+      target_year: year
+    });
+    if (error) throw error;
+    return data as CommercialDrilldownDashboard;
+  }
+
+  async getItems(input: {
+    year: number;
+    month: number;
+    metricKey: string;
+    responsibleId: string | null;
+    query: string | null;
+    page: number;
+    pageSize: number;
+    sort: string;
+  }): Promise<CommercialDrilldownItemsPage> {
+    const { data, error } = await this.client.rpc("get_commercial_drilldown_items", {
+      target_year: input.year,
+      target_month: input.month,
+      target_metric_key: input.metricKey,
+      target_responsible_id: input.responsibleId,
+      q: input.query,
+      page: input.page,
+      page_size: input.pageSize,
+      sort: input.sort
+    });
+    if (error) throw error;
+    return data as CommercialDrilldownItemsPage;
+  }
+
+  async startSync(triggeredByUserId: string): Promise<CommercialSyncStartResult> {
+    const { data, error } = await this.client.rpc("start_commercial_sync", {
+      triggered_by_user_id: triggeredByUserId
+    });
+    if (error) throw error;
+    return data as CommercialSyncStartResult;
+  }
+
+  async getSyncStatus(): Promise<Pick<CommercialDrilldownDashboard, "lastSuccessfulSyncAt" | "activeJob">> {
+    const { data, error } = await this.client.rpc("get_commercial_sync_status");
+    if (error) throw error;
+    return data as Pick<CommercialDrilldownDashboard, "lastSuccessfulSyncAt" | "activeJob">;
+  }
 }
 
 export class SupabaseUserRepository implements UserRepositoryPort {

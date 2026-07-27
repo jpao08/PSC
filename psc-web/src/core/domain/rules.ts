@@ -91,6 +91,18 @@ export function ensureCanUseIssueReports(user: User): void {
   throw new AuthorizationError("Usuario sem permissao para acessar Issue Reports.");
 }
 
+export function ensureCanUseCommercialDrilldown(user: User): void {
+  ensureUserActive(user);
+  if (user.role === "executivo" || user.role === "executivo_visualizacao" || user.canAdminUsers) return;
+  throw new AuthorizationError("Usuario sem permissao para acessar Drill Down Comercial.");
+}
+
+export function ensureCanStartCommercialSync(user: User): void {
+  ensureUserActive(user);
+  if (user.canAdminUsers) return;
+  throw new AuthorizationError("Somente Admin pode iniciar sincronizacao comercial.");
+}
+
 export function ensureExecutiveIssueAccess(user: User): void {
   ensureUserActive(user);
   if (user.role !== "executivo") {

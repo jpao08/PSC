@@ -3,6 +3,9 @@ import {
   AggregationType,
   Area,
   BitrixUser,
+  CommercialDrilldownDashboard,
+  CommercialDrilldownItemsPage,
+  CommercialSyncStartResult,
   Indicator,
   IndicatorTableRow,
   IndicatorUnit,
@@ -138,6 +141,22 @@ export interface WinReportRepositoryPort {
   createWinTag(name: string, color: string | null, createdBy: string): Promise<WinTag>;
   updateWinTag(tagId: string, name: string, color: string | null): Promise<WinTag>;
   deactivateWinTag(tagId: string): Promise<void>;
+}
+
+export interface CommercialDrilldownRepositoryPort {
+  getDashboard(year: number): Promise<CommercialDrilldownDashboard>;
+  getItems(input: {
+    year: number;
+    month: number;
+    metricKey: string;
+    responsibleId: string | null;
+    query: string | null;
+    page: number;
+    pageSize: number;
+    sort: string;
+  }): Promise<CommercialDrilldownItemsPage>;
+  startSync(triggeredByUserId: string): Promise<CommercialSyncStartResult>;
+  getSyncStatus(): Promise<Pick<CommercialDrilldownDashboard, "lastSuccessfulSyncAt" | "activeJob">>;
 }
 
 export interface BitrixGatewayPort {
