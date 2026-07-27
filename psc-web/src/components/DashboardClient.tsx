@@ -7,6 +7,11 @@ import {
   AggregationType,
   Area,
   BitrixUser,
+  CommercialDrilldownDashboard,
+  CommercialDrilldownItem,
+  CommercialDrilldownItemsPage,
+  CommercialDrilldownMetric,
+  CommercialDrilldownRow,
   IndicatorTableRow,
   IndicatorUnit,
   IssueReport,
@@ -64,7 +69,15 @@ type IssueTagFormState = {
 };
 
 type IssueSortMode = "executive" | "requester" | "date";
-type ReportTab = "indicators" | "issues" | "wins";
+type ReportTab = "indicators" | "commercial" | "issues" | "wins";
+
+type CommercialDrilldownSelection = {
+  metric: CommercialDrilldownMetric;
+  row: CommercialDrilldownRow;
+  month: number | null;
+  page: number;
+  query: string;
+};
 
 type ActionPlanFormState = {
   title: string;
@@ -158,6 +171,24 @@ function formatNumber(value: number | null): string {
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value);
 }
 
+function formatCommercialValue(value: number | null, unit: "quantity" | "money"): string {
+  if (value == null || Number.isNaN(value)) return "-";
+  if (unit === "money") {
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+      maximumFractionDigits: 2
+    }).format(value);
+  }
+  return new Intl.NumberFormat("pt-BR", {
+    maximumFractionDigits: Number.isInteger(value) ? 0 : 2
+  }).format(value);
+}
+
+function hasCommercialValue(value: number | null | undefined): boolean {
+  return value != null && !Number.isNaN(value) && value !== 0;
+}
+
 const performanceLabels: Record<string, string> = {
   neutral: "Nao informado",
   not_reliable: "Nao confiavel",
@@ -233,6 +264,10 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
   const [user] = useState(initialUser);
   const [year, setYear] = useState(new Date().getFullYear());
   const [indicators, setIndicators] = useState<IndicatorTableRow[]>([]);
+  const [commercialDashboard, setCommercialDashboard] = useState<CommercialDrilldownDashboard | null>(null);
+  const [commercialSelection, setCommercialSelection] = useState<CommercialDrilldownSelection | null>(null);
+  const [commercialItems, setCommercialItems] = useState<CommercialDrilldownItemsPage | null>(null);
+  const [commercialLoading, setCommercialLoading] = useState(false);
   const [issues, setIssues] = useState<IssueReport[]>([]);
   const [issueTags, setIssueTags] = useState<IssueTag[]>([]);
   const [wins, setWins] = useState<WinReport[]>([]);
@@ -311,6 +346,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
   const isExecutive = user.role === "executivo";
   const canEditMaturity = isExecutive || user.canEditIndicatorMaturity;
   const canAdmin = user.role === "executivo" || user.canAdminUsers;
+  const canUseCommercial = isExecutive || user.role === "executivo_visualizacao" || user.canAdminUsers;
   const currentMonth = year === new Date().getFullYear() ? new Date().getMonth() + 1 : null;
 
   const filteredIndicators = useMemo(() => {
@@ -400,6 +436,38 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
     }
   }, [year]);
 
+  const loadCommercialDashboard = useCallback(async () => {
+    if (!canUseCommercial) return;
+    setCommercialLoading(true);
+    try {
+      setCommercialDashboard(await api<CommercialDrilldownDashboard>(`/api/commercial-drilldown?year=${year}`));
+      setStatus("Drill Down Comercial carregado.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao carregar Drill Down Comercial.");
+    } finally {
+      setCommercialLoading(false);
+    }
+  }, [canUseCommercial, year]);
+
+  const loadCommercialItems = useCallback(async (selection: CommercialDrilldownSelection) => {
+    const params = new URLSearchParams({
+      year: String(year),
+      metricKey: selection.metric.metricKey,
+      page: String(selection.page),
+      pageSize: "25",
+      sort: "date_desc"
+    });
+    if (selection.month) params.set("month", String(selection.month));
+    if (!selection.month) params.set("month", "1");
+    if (!selection.row.isTotal) params.set("responsibleId", selection.row.responsibleId ?? "__none__");
+    if (selection.query.trim()) params.set("q", selection.query.trim());
+    try {
+      setCommercialItems(await api<CommercialDrilldownItemsPage>(`/api/commercial-drilldown/items?${params.toString()}`));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao carregar cards do Drill Down.");
+    }
+  }, [year]);
+
   const loadIssues = useCallback(async () => {
     if (!canUseIssues) return;
     try {
@@ -459,7 +527,32 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
   useEffect(() => {
     if (activeTab === "issues") loadIssues();
     if (activeTab === "wins") loadWins();
-  }, [activeTab, loadIssues, loadWins]);
+    if (activeTab === "commercial") loadCommercialDashboard();
+  }, [activeTab, loadCommercialDashboard, loadIssues, loadWins]);
+
+  useEffect(() => {
+    if (commercialSelection) loadCommercialItems(commercialSelection);
+  }, [commercialSelection, loadCommercialItems]);
+
+  function openCommercialDrilldown(metric: CommercialDrilldownMetric, row: CommercialDrilldownRow, month: number): void {
+    const value = row.months[String(month)];
+    if (!hasCommercialValue(value)) return;
+    setCommercialItems(null);
+    setCommercialSelection({ metric, row, month, page: 1, query: "" });
+  }
+
+  async function startCommercialSync(): Promise<void> {
+    try {
+      const result = await api<{ message: string }>("/api/commercial-drilldown/sync", {
+        method: "POST",
+        body: "{}"
+      });
+      setStatus(result.message || "Sincronizacao comercial solicitada.");
+      await loadCommercialDashboard();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao iniciar sincronizacao comercial.");
+    }
+  }
 
   async function logout() {
     await api("/api/logout", { method: "POST", body: "{}" });
@@ -1162,6 +1255,11 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
         <button className={`tab-btn ${activeTab === "indicators" ? "active" : ""}`} type="button" onClick={() => setActiveTab("indicators")}>
           Indicadores
         </button>
+        {canUseCommercial ? (
+          <button className={`tab-btn ${activeTab === "commercial" ? "active" : ""}`} type="button" onClick={() => setActiveTab("commercial")}>
+            Drill Down Comercial
+          </button>
+        ) : null}
         {canUseIssues ? (
           <button className={`tab-btn ${activeTab === "issues" ? "active" : ""}`} type="button" onClick={() => setActiveTab("issues")}>
             Issue Reports
@@ -1342,6 +1440,132 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
             </div>
             {filteredIndicators.length === 0 ? <div className="empty-table-message muted">Nenhum indicador encontrado.</div> : null}
           </div>
+        </section>
+      ) : activeTab === "commercial" ? (
+        <section className="card app-view commercial-view">
+          <div className="toolbar">
+            <div>
+              <h2>Drill Down Comercial</h2>
+              <p className="muted">
+                Ultima sincronizacao: {commercialDashboard?.lastSuccessfulSyncAt ? new Date(commercialDashboard.lastSuccessfulSyncAt).toLocaleString("pt-BR") : "-"}
+              </p>
+            </div>
+            <div className="toolbar-actions">
+              {commercialDashboard?.activeJob ? <span className="status-pill">Sincronizacao em andamento</span> : null}
+              {user.canAdminUsers ? <button type="button" className="secondary" onClick={startCommercialSync}>Sincronizar agora</button> : null}
+              <button type="button" onClick={loadCommercialDashboard} disabled={commercialLoading}>Recarregar</button>
+            </div>
+          </div>
+
+          {commercialDashboard?.metrics.map((metric) => (
+            <section className="commercial-metric" key={metric.metricKey}>
+              <div className="toolbar commercial-metric-title">
+                <h3>{metric.label}</h3>
+                <span className="muted">{metric.kind === "flow" ? "Fluxo" : "Estoque"} - {metric.unit === "money" ? "R$" : "Qtd."}</span>
+              </div>
+              <div className="table-wrap commercial-table-wrap">
+                <table className="commercial-table">
+                  <thead>
+                    <tr>
+                      <th className="commercial-responsible-col">Responsavel</th>
+                      {months.map((month) => <th key={month}>{month}</th>)}
+                      <th>{metric.summaryLabel}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metric.rows.map((row) => (
+                      <tr key={`${metric.metricKey}-${row.isTotal ? "total" : row.responsibleId ?? "none"}`} className={row.isTotal ? "commercial-total-row" : ""}>
+                        <td className="commercial-responsible-col">
+                          {row.responsibleName}
+                          {!row.responsibleActive ? <span className="inactive-badge">Inativo</span> : null}
+                        </td>
+                        {months.map((monthLabel, index) => {
+                          const month = index + 1;
+                          const value = row.months[String(month)];
+                          const clickable = hasCommercialValue(value);
+                          return (
+                            <td
+                              key={monthLabel}
+                              className={clickable ? "clickable-cell commercial-value-cell" : "commercial-value-cell"}
+                              onClick={() => clickable && openCommercialDrilldown(metric, row, month)}
+                              title={clickable ? "Abrir Drill Down" : undefined}
+                            >
+                              {formatCommercialValue(value, metric.unit)}
+                            </td>
+                          );
+                        })}
+                        <td className="commercial-summary-cell">{formatCommercialValue(row.annualSummary, metric.unit)}</td>
+                      </tr>
+                    ))}
+                    {metric.rows.length === 0 ? <tr><td colSpan={14} className="muted">Sem dados comerciais para o ano.</td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ))}
+
+          {!commercialDashboard || commercialDashboard.metrics.length === 0 ? (
+            <p className="muted">{commercialLoading ? "Carregando Drill Down Comercial..." : "Nenhum dado comercial encontrado."}</p>
+          ) : null}
+
+          {commercialSelection ? (
+            <aside className="side-panel">
+              <div className="toolbar">
+                <div>
+                  <h3>{commercialSelection.metric.label}</h3>
+                  <p className="muted">
+                    {commercialSelection.row.isTotal ? "Total" : commercialSelection.row.responsibleName} - {months[(commercialSelection.month ?? 1) - 1]}/{year}
+                  </p>
+                </div>
+                <button type="button" className="secondary" onClick={() => setCommercialSelection(null)}>Fechar</button>
+              </div>
+              <label>
+                Buscar Card
+                <input
+                  value={commercialSelection.query}
+                  onChange={(event) => {
+                    setCommercialItems(null);
+                    setCommercialSelection({ ...commercialSelection, query: event.target.value, page: 1 });
+                  }}
+                />
+              </label>
+              <div className="commercial-drill-list">
+                {(commercialItems?.items ?? []).map((item: CommercialDrilldownItem) => (
+                  <article className="commercial-drill-card" key={item.dealId}>
+                    <div className="toolbar">
+                      <strong>#{item.dealId} {item.title ?? ""}</strong>
+                      {item.bitrixUrl ? <a href={item.bitrixUrl} target="_blank" rel="noreferrer">Abrir Bitrix</a> : null}
+                    </div>
+                    <p className="muted">{item.responsibleName} - {item.stageName ?? item.stageId ?? "-"}</p>
+                    <p>{formatCommercialValue(item.monetaryContribution ?? item.opportunity, "money")} | {item.eventDate ? new Date(item.eventDate).toLocaleDateString("pt-BR") : item.referenceDate ? new Date(item.referenceDate).toLocaleDateString("pt-BR") : "-"}</p>
+                  </article>
+                ))}
+                {commercialItems && commercialItems.items.length === 0 ? <p className="muted">Nenhum Card encontrado.</p> : null}
+                {!commercialItems ? <p className="muted">Carregando Cards...</p> : null}
+              </div>
+              {commercialItems ? (
+                <div className="toolbar-actions">
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={commercialSelection.page <= 1}
+                    onClick={() => setCommercialSelection({ ...commercialSelection, page: commercialSelection.page - 1 })}
+                  >
+                    Anterior
+                  </button>
+                  <span className="muted">Pagina {commercialItems.page} de {Math.max(1, Math.ceil(commercialItems.totalItems / commercialItems.pageSize))}</span>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={commercialItems.page * commercialItems.pageSize >= commercialItems.totalItems}
+                    onClick={() => setCommercialSelection({ ...commercialSelection, page: commercialSelection.page + 1 })}
+                  >
+                    Proxima
+                  </button>
+                </div>
+              ) : null}
+            </aside>
+          ) : null}
         </section>
       ) : activeTab === "issues" ? (
         <section className="card app-view">

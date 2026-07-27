@@ -7,6 +7,7 @@ from adapters.output.supabase_bitrix_user_directory import SupabaseBitrixUserDir
 from adapters.output.supabase_repositories import (
     SimpleTokenService,
     SupabaseActionPlanRepository,
+    SupabaseCommercialDrilldownRepository,
     SupabaseIndicatorRepository,
     SupabaseIssueReportRepository,
     SupabaseUserRepository,
@@ -14,6 +15,7 @@ from adapters.output.supabase_repositories import (
 )
 from core.ports.repositories import (
     ActionPlanRepositoryPort,
+    CommercialDrilldownRepositoryPort,
     IndicatorRepositoryPort,
     IssueReportRepositoryPort,
     SessionPort,
@@ -60,6 +62,7 @@ class Container:
     action_plan_repository: ActionPlanRepositoryPort
     issue_report_repository: IssueReportRepositoryPort
     win_report_repository: WinReportRepositoryPort
+    commercial_drilldown_repository: CommercialDrilldownRepositoryPort
     task_gateway: TaskGatewayPort
     authenticate_user: AuthenticateUser
     list_indicators: ListIndicators
@@ -101,6 +104,7 @@ def build_container() -> Container:
     action_plan_repository = SupabaseActionPlanRepository(client=supabase_client)
     issue_report_repository = SupabaseIssueReportRepository(client=supabase_client)
     win_report_repository = SupabaseWinReportRepository(client=supabase_client)
+    commercial_drilldown_repository = SupabaseCommercialDrilldownRepository(client=supabase_client)
     user_directory = None
     if users_supabase_client is not None and settings.users_supabase_table:
         user_directory = SupabaseBitrixUserDirectory(
@@ -127,6 +131,7 @@ def build_container() -> Container:
         action_plan_repository=action_plan_repository,
         issue_report_repository=issue_report_repository,
         win_report_repository=win_report_repository,
+        commercial_drilldown_repository=commercial_drilldown_repository,
         task_gateway=task_gateway,
         authenticate_user=AuthenticateUser(
             user_repository=user_repository,

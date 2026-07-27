@@ -17,6 +17,9 @@ const state = {
   issueReports: [],
   issueTags: [],
   wins: [],
+  commercialDashboard: null,
+  commercialSelection: null,
+  commercialItems: null,
 };
 
 const HEX_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/;
@@ -64,8 +67,14 @@ const createIndicatorSubmit = document.getElementById("ci-submit");
 const createIndicatorId = document.getElementById("ci-indicator-id");
 const appTabs = document.getElementById("app-tabs");
 const indicatorsView = document.getElementById("indicators-view");
+const commercialView = document.getElementById("commercial-view");
+const commercialDashboard = document.getElementById("commercial-dashboard");
+const commercialSyncStatus = document.getElementById("commercial-sync-status");
+const commercialSyncBtn = document.getElementById("commercial-sync-btn");
+const commercialReloadBtn = document.getElementById("commercial-reload-btn");
 const issuesView = document.getElementById("issues-view");
 const tabIndicators = document.getElementById("tab-indicators");
+const tabCommercial = document.getElementById("tab-commercial");
 const tabIssues = document.getElementById("tab-issues");
 const tabWins = document.getElementById("tab-wins");
 const issueForm = document.getElementById("issue-form");
@@ -120,6 +129,26 @@ function formatNumber(value) {
     return "-";
   }
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value);
+}
+
+function formatCommercialValue(value, unit) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "-";
+  }
+  if (unit === "money") {
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+      maximumFractionDigits: 2,
+    }).format(Number(value));
+  }
+  return new Intl.NumberFormat("pt-BR", {
+    maximumFractionDigits: Number.isInteger(Number(value)) ? 0 : 2,
+  }).format(Number(value));
+}
+
+function hasCommercialValue(value) {
+  return value !== null && value !== undefined && Number(value) !== 0 && !Number.isNaN(Number(value));
 }
 
 const performanceLabels = {
@@ -229,8 +258,9 @@ function applyLoggedInView() {
 
   const shutdownBtn = document.getElementById("shutdown-btn");
   shutdownBtn.classList.remove("hidden");
-  appTabs.classList.toggle("hidden", !canUseIssueReports());
-  if (!canUseIssueReports()) {
+  appTabs.classList.toggle("hidden", !canUseIssueReports() && !canUseCommercialDrilldown());
+  tabCommercial.classList.toggle("hidden", !canUseCommercialDrilldown());
+  if (!canUseIssueReports() && !canUseCommercialDrilldown()) {
     state.activeTab = "indicators";
   }
   showAppTab(state.activeTab || "indicators", false);
@@ -273,6 +303,7 @@ function applyLoggedOutView() {
   areaManagementPanel.classList.add("hidden");
   appTabs.classList.add("hidden");
   issuesView.classList.add("hidden");
+  commercialView.classList.add("hidden");
   winsView.classList.add("hidden");
   indicatorsView.classList.remove("hidden");
   execAreaModeHint.textContent = "";
@@ -290,6 +321,14 @@ function canUseIssueReports() {
   );
 }
 
+function canUseCommercialDrilldown() {
+  return !!(
+    state.user
+    && (state.user.role === "executivo"
+      || state.user.role === "executivo_visualizacao")
+  );
+}
+
 function canUseGlobalIndicatorFilters() {
   return !!(
     state.user
@@ -298,16 +337,25 @@ function canUseGlobalIndicatorFilters() {
 }
 
 async function showAppTab(tabName, shouldLoad = true) {
-  const effectiveTab = ["issues", "wins"].includes(tabName) && canUseIssueReports()
-    ? tabName
-    : "indicators";
+  let effectiveTab = "indicators";
+  if (["issues", "wins"].includes(tabName) && canUseIssueReports()) {
+    effectiveTab = tabName;
+  }
+  if (tabName === "commercial" && canUseCommercialDrilldown()) {
+    effectiveTab = "commercial";
+  }
   state.activeTab = effectiveTab;
   indicatorsView.classList.toggle("hidden", effectiveTab !== "indicators");
+  commercialView.classList.toggle("hidden", effectiveTab !== "commercial");
   issuesView.classList.toggle("hidden", effectiveTab !== "issues");
   winsView.classList.toggle("hidden", effectiveTab !== "wins");
   tabIndicators.classList.toggle("active", effectiveTab === "indicators");
+  tabCommercial.classList.toggle("active", effectiveTab === "commercial");
   tabIssues.classList.toggle("active", effectiveTab === "issues");
   tabWins.classList.toggle("active", effectiveTab === "wins");
+  if (effectiveTab === "commercial" && shouldLoad) {
+    await loadCommercialDrilldown();
+  }
   if (effectiveTab === "issues" && shouldLoad) {
     await loadIssueReports();
   }
@@ -508,6 +556,155 @@ async function loadWins() {
   state.wins = await api("/api/wins");
   populateWinFilters();
   renderWins();
+}
+
+async function loadCommercialDrilldown() {
+  if (!canUseCommercialDrilldown()) {
+    return;
+  }
+  state.commercialDashboard = await api(`/api/commercial-drilldown?year=${state.year}`);
+  renderCommercialDrilldown();
+  setStatus("Drill Down Comercial carregado.", "success");
+}
+
+function renderCommercialDrilldown() {
+  commercialDashboard.innerHTML = "";
+  const dashboardData = state.commercialDashboard;
+  const syncText = dashboardData && dashboardData.lastSuccessfulSyncAt
+    ? new Date(dashboardData.lastSuccessfulSyncAt).toLocaleString("pt-BR")
+    : "-";
+  commercialSyncStatus.textContent = `Ultima sincronizacao: ${syncText}`;
+  commercialSyncBtn.classList.toggle("hidden", !(state.user && state.user.role === "executivo"));
+  if (!dashboardData || !dashboardData.metrics || dashboardData.metrics.length === 0) {
+    commercialDashboard.innerHTML = '<p class="muted">Nenhum dado comercial encontrado.</p>';
+    return;
+  }
+  dashboardData.metrics.forEach((metric) => {
+    const section = document.createElement("section");
+    section.className = "commercial-metric";
+    section.innerHTML = `
+      <div class="toolbar commercial-metric-title">
+        <h3>${metric.label}</h3>
+        <span class="muted">${metric.kind === "flow" ? "Fluxo" : "Estoque"} - ${metric.unit === "money" ? "R$" : "Qtd."}</span>
+      </div>
+    `;
+    const wrap = document.createElement("div");
+    wrap.className = "table-wrap commercial-table-wrap";
+    const table = document.createElement("table");
+    table.className = "commercial-table";
+    table.innerHTML = `
+      <thead>
+        <tr>
+          <th class="commercial-responsible-col">Responsavel</th>
+          ${monthsLabels.map((month) => `<th>${month}</th>`).join("")}
+          <th>${metric.summaryLabel}</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
+    const tbody = table.querySelector("tbody");
+    metric.rows.forEach((row) => {
+      const tr = document.createElement("tr");
+      if (row.isTotal) tr.classList.add("commercial-total-row");
+      const responsible = document.createElement("td");
+      responsible.className = "commercial-responsible-col";
+      responsible.textContent = row.responsibleName;
+      if (!row.responsibleActive) {
+        const inactive = document.createElement("span");
+        inactive.className = "inactive-badge";
+        inactive.textContent = "Inativo";
+        responsible.appendChild(inactive);
+      }
+      tr.appendChild(responsible);
+      monthsLabels.forEach((monthLabel, index) => {
+        const month = index + 1;
+        const value = row.months ? row.months[String(month)] : null;
+        const td = document.createElement("td");
+        td.className = "commercial-value-cell";
+        td.textContent = formatCommercialValue(value, metric.unit);
+        if (hasCommercialValue(value)) {
+          td.classList.add("clickable-cell");
+          td.title = "Abrir Drill Down";
+          td.addEventListener("click", () => openCommercialDrilldown(metric, row, month));
+        }
+        tr.appendChild(td);
+      });
+      const summary = document.createElement("td");
+      summary.className = "commercial-summary-cell";
+      summary.textContent = formatCommercialValue(row.annualSummary, metric.unit);
+      tr.appendChild(summary);
+      tbody.appendChild(tr);
+    });
+    wrap.appendChild(table);
+    section.appendChild(wrap);
+    commercialDashboard.appendChild(section);
+  });
+}
+
+async function openCommercialDrilldown(metric, row, month, page = 1, query = "") {
+  state.commercialSelection = { metric, row, month, page, query };
+  await loadCommercialItems();
+}
+
+async function loadCommercialItems() {
+  const selection = state.commercialSelection;
+  if (!selection) return;
+  const params = new URLSearchParams({
+    year: String(state.year),
+    month: String(selection.month),
+    metric_key: selection.metric.metricKey,
+    page: String(selection.page),
+    page_size: "25",
+    sort: "date_desc",
+  });
+  if (!selection.row.isTotal) params.set("responsible_id", selection.row.responsibleId || "__none__");
+  if (selection.query) params.set("q", selection.query);
+  state.commercialItems = await api(`/api/commercial-drilldown/items?${params.toString()}`);
+  renderCommercialItemsPanel();
+}
+
+function renderCommercialItemsPanel() {
+  const selection = state.commercialSelection;
+  const page = state.commercialItems;
+  if (!selection) return;
+  issueDetailPanel.classList.remove("hidden");
+  issueDetailTitle.textContent = selection.metric.label;
+  const pageCount = page ? Math.max(1, Math.ceil(page.totalItems / page.pageSize)) : 1;
+  issueDetailBody.innerHTML = `
+    <section>
+      <strong>${selection.row.isTotal ? "Total" : selection.row.responsibleName} - ${monthsLabels[selection.month - 1]}/${state.year}</strong>
+      <label>Buscar Card <input id="commercial-detail-search" value="${selection.query || ""}" /></label>
+    </section>
+    <section class="commercial-drill-list">
+      ${(page && page.items ? page.items : []).map((item) => `
+        <article class="commercial-drill-card">
+          <div class="toolbar">
+            <strong>#${item.dealId} ${item.title || ""}</strong>
+            ${item.bitrixUrl ? `<a href="${item.bitrixUrl}" target="_blank" rel="noreferrer">Abrir Bitrix</a>` : ""}
+          </div>
+          <p class="muted">${item.responsibleName} - ${item.stageName || item.stageId || "-"}</p>
+          <p>${formatCommercialValue(item.monetaryContribution || item.opportunity, "money")}</p>
+        </article>
+      `).join("") || '<p class="muted">Nenhum Card encontrado.</p>'}
+    </section>
+    <div class="toolbar-actions">
+      <button id="commercial-prev-page" type="button" class="secondary" ${selection.page <= 1 ? "disabled" : ""}>Anterior</button>
+      <span class="muted">Pagina ${selection.page} de ${pageCount}</span>
+      <button id="commercial-next-page" type="button" class="secondary" ${page && selection.page * page.pageSize < page.totalItems ? "" : "disabled"}>Proxima</button>
+    </div>
+  `;
+  document.getElementById("commercial-detail-search").addEventListener("change", async (event) => {
+    state.commercialSelection = { ...selection, query: event.target.value, page: 1 };
+    await loadCommercialItems();
+  });
+  document.getElementById("commercial-prev-page").addEventListener("click", async () => {
+    state.commercialSelection = { ...selection, page: Math.max(1, selection.page - 1) };
+    await loadCommercialItems();
+  });
+  document.getElementById("commercial-next-page").addEventListener("click", async () => {
+    state.commercialSelection = { ...selection, page: selection.page + 1 };
+    await loadCommercialItems();
+  });
 }
 
 function resetIssueTagForm() {
@@ -1813,6 +2010,8 @@ document.getElementById("reload-btn").addEventListener("click", async () => {
       await loadIssueReports();
     } else if (state.activeTab === "wins") {
       await loadWins();
+    } else if (state.activeTab === "commercial") {
+      await loadCommercialDrilldown();
     } else {
       await loadIndicators();
     }
@@ -1830,6 +2029,14 @@ tabIndicators.addEventListener("click", async () => {
   }
 });
 
+tabCommercial.addEventListener("click", async () => {
+  try {
+    await showAppTab("commercial");
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+});
+
 tabIssues.addEventListener("click", async () => {
   try {
     await showAppTab("issues");
@@ -1841,6 +2048,27 @@ tabIssues.addEventListener("click", async () => {
 tabWins.addEventListener("click", async () => {
   try {
     await showAppTab("wins");
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+});
+
+commercialReloadBtn.addEventListener("click", async () => {
+  try {
+    await loadCommercialDrilldown();
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+});
+
+commercialSyncBtn.addEventListener("click", async () => {
+  try {
+    const result = await api("/api/commercial-drilldown/sync", {
+      method: "POST",
+      body: "{}",
+    });
+    await loadCommercialDrilldown();
+    setStatus(result.message || "Sincronizacao comercial solicitada.", "success");
   } catch (error) {
     setStatus(error.message, "error");
   }
