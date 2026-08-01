@@ -307,7 +307,15 @@ class SupabaseUserRepository(UserRepositoryPort):
             is_active=bool(row.get("is_active", True)),
             password_hash=str(row.get("password_hash") or ""),
             can_edit_projected_value=bool(row.get("can_edit_projected_value", False)),
+            can_edit_indicator_maturity=bool(row.get("can_edit_indicator_maturity", False)),
             can_use_issue_reports=bool(row.get("can_use_issue_reports", False)),
+            can_admin_users=bool(row.get("can_admin_users", False)),
+            can_view_commercial_drilldown=bool(row.get("can_view_commercial_drilldown", False)),
+            can_view_marketing_drilldown=bool(row.get("can_view_marketing_drilldown", False)),
+            can_view_financial_drilldown=bool(row.get("can_view_financial_drilldown", False)),
+            can_edit_financial_drilldown=bool(row.get("can_edit_financial_drilldown", False)),
+            bitrix_user_id=str(row["bitrix_user_id"]) if row.get("bitrix_user_id") else None,
+            bitrix_portal_domain=str(row["bitrix_portal_domain"]) if row.get("bitrix_portal_domain") else None,
             area_ids=area_ids,
         )
 

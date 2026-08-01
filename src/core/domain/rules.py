@@ -154,14 +154,35 @@ def ensure_can_use_issue_reports(user: User) -> None:
 
 def ensure_can_use_commercial_drilldown(user: User) -> None:
     ensure_user_active(user)
-    if user.role in {"executivo", "executivo_visualizacao"}:
+    if user.role == "executivo" or user.can_view_commercial_drilldown:
         return
     raise AuthorizationError("Usuario sem permissao para acessar Drill Down Comercial.")
 
 
+def ensure_can_use_marketing_drilldown(user: User) -> None:
+    ensure_user_active(user)
+    if user.role == "executivo" or user.can_view_marketing_drilldown:
+        return
+    raise AuthorizationError("Usuario sem permissao para acessar Drill Down Marketing.")
+
+
+def ensure_can_view_financial_drilldown(user: User) -> None:
+    ensure_user_active(user)
+    if user.role == "executivo" or user.can_view_financial_drilldown or user.can_edit_financial_drilldown:
+        return
+    raise AuthorizationError("Usuario sem permissao para acessar Drill Down Financeiro.")
+
+
+def ensure_can_edit_financial_drilldown(user: User) -> None:
+    ensure_user_active(user)
+    if user.role == "executivo" or user.can_edit_financial_drilldown:
+        return
+    raise AuthorizationError("Usuario sem permissao para editar Drill Down Financeiro.")
+
+
 def ensure_can_start_commercial_sync(user: User) -> None:
     ensure_user_active(user)
-    if user.role == "executivo":
+    if user.role == "executivo" or user.can_admin_users:
         return
     raise AuthorizationError("Somente Admin pode iniciar sincronizacao comercial.")
 

@@ -57,6 +57,8 @@ const bitrixWebhookUrl = Deno.env.get("BITRIX_WEBHOOK_URL") ?? "";
 const syncSince = Deno.env.get("COMMERCIAL_SYNC_SINCE") ?? "2026-01-01T00:00:00-03:00";
 const categoryId = Number(Deno.env.get("COMMERCIAL_BITRIX_CATEGORY_ID") ?? "0");
 const staleJobMinutes = Number(Deno.env.get("COMMERCIAL_SYNC_STALE_MINUTES") ?? "10");
+const jobType = "incremental";
+const functionVersion = "commercial-sync-job-type-scoped-2026-08-01-1";
 
 const stageGroups = {
   initial_pipe: new Set(["9", "6", "8", "7", "UC_83I1JS", "4", "10", "NEW", "11", "5"]),
@@ -66,7 +68,10 @@ const stageGroups = {
 };
 
 function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
+  const payload = typeof body === "object" && body !== null && !Array.isArray(body)
+    ? { version: functionVersion, ...body }
+    : { version: functionVersion, data: body };
+  return new Response(JSON.stringify(payload), {
     status,
     headers: { "content-type": "application/json" },
   });
@@ -113,6 +118,32 @@ function normalizeSemantic(value: unknown): string {
 
 function parseBool(value: unknown): boolean {
   return value === true || value === "Y" || value === "true" || value === 1 || value === "1";
+}
+
+function hash32(value: string, seed: number): string {
+  let hash = (2166136261 ^ seed) >>> 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function deterministicUuid(value: string): string {
+  const chars = [
+    ...hash32(value, 0x8c2d0a11),
+    ...hash32(value, 0x4f31bb09),
+    ...hash32(value, 0x1a62d72f),
+    ...hash32(value, 0x9e3779b9),
+  ];
+  chars[12] = "5";
+  chars[16] = ((Number.parseInt(chars[16], 16) & 0x3) | 0x8).toString(16);
+  const hex = chars.join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function cycleUuid(dealId: string, cycleNumber: number): string {
+  return deterministicUuid(`commercial-cycle:${dealId}:${cycleNumber}`);
 }
 
 function monthEndSaoPaulo(year: number, month: number): Date {
@@ -220,7 +251,7 @@ async function bitrixList(
 
 async function expireStaleJobs() {
   const cutoff = new Date(Date.now() - Math.max(staleJobMinutes, 1) * 60_000).toISOString();
-  await rest(`bitrix_sync_jobs?status=in.(pending,running)&updated_at=lt.${encodeURIComponent(cutoff)}`, {
+  await rest(`bitrix_sync_jobs?job_type=eq.${jobType}&status=in.(pending,running)&updated_at=lt.${encodeURIComponent(cutoff)}`, {
     method: "PATCH",
     body: JSON.stringify({
       status: "failed",
@@ -233,7 +264,7 @@ async function expireStaleJobs() {
 }
 
 async function getPendingJob(): Promise<Job | null> {
-  const jobs = await rest("bitrix_sync_jobs?status=eq.pending&order=created_at.asc&limit=1");
+  const jobs = await rest(`bitrix_sync_jobs?job_type=eq.${jobType}&status=eq.pending&order=created_at.asc&limit=1`);
   return jobs[0] ?? null;
 }
 
@@ -447,7 +478,7 @@ function buildCycles(history: StageHistory[], deals: Map<string, Deal>): Cycle[]
       if (startsCycle) {
         cycleNumber += 1;
         active = {
-          cycleId: crypto.randomUUID(),
+          cycleId: cycleUuid(dealId, cycleNumber),
           dealId,
           cycleNumber,
           startedAt: row.enteredAt,
@@ -467,7 +498,7 @@ function buildCycles(history: StageHistory[], deals: Map<string, Deal>): Cycle[]
     if (!cycles.some((cycle) => cycle.dealId === dealId)) {
       const deal = deals.get(dealId)!;
       cycles.push({
-        cycleId: crypto.randomUUID(),
+        cycleId: cycleUuid(dealId, 1),
         dealId,
         cycleNumber: 1,
         startedAt: deal.createdTime ?? syncSince,
@@ -480,7 +511,7 @@ function buildCycles(history: StageHistory[], deals: Map<string, Deal>): Cycle[]
   for (const deal of deals.values()) {
     if (cycles.some((cycle) => cycle.dealId === deal.id)) continue;
     cycles.push({
-      cycleId: crypto.randomUUID(),
+      cycleId: cycleUuid(deal.id, 1),
       dealId: deal.id,
       cycleNumber: 1,
       startedAt: deal.createdTime ?? syncSince,

@@ -12,10 +12,17 @@ import {
   CommercialDrilldownItemsPage,
   CommercialDrilldownMetric,
   CommercialDrilldownRow,
+  FinancialDrilldownDashboard,
+  FinancialDrilldownRow,
   IndicatorTableRow,
   IndicatorUnit,
   IssueReport,
   IssueTag,
+  MarketingDrilldownDashboard,
+  MarketingDrilldownItem,
+  MarketingDrilldownItemsPage,
+  MarketingDrilldownMetric,
+  MarketingDrilldownRow,
   User,
   WinReport,
   WinTag
@@ -69,12 +76,20 @@ type IssueTagFormState = {
 };
 
 type IssueSortMode = "executive" | "requester" | "date";
-type ReportTab = "indicators" | "commercial" | "issues" | "wins";
+type ReportTab = "indicators" | "commercial" | "financial" | "marketing" | "issues" | "wins";
 
 type CommercialDrilldownSelection = {
   metric: CommercialDrilldownMetric;
   row: CommercialDrilldownRow;
   month: number | null;
+  page: number;
+  query: string;
+};
+
+type MarketingDrilldownSelection = {
+  metric: MarketingDrilldownMetric;
+  row: MarketingDrilldownRow;
+  month: number;
   page: number;
   query: string;
 };
@@ -268,6 +283,12 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
   const [commercialSelection, setCommercialSelection] = useState<CommercialDrilldownSelection | null>(null);
   const [commercialItems, setCommercialItems] = useState<CommercialDrilldownItemsPage | null>(null);
   const [commercialLoading, setCommercialLoading] = useState(false);
+  const [financialDashboard, setFinancialDashboard] = useState<FinancialDrilldownDashboard | null>(null);
+  const [financialLoading, setFinancialLoading] = useState(false);
+  const [marketingDashboard, setMarketingDashboard] = useState<MarketingDrilldownDashboard | null>(null);
+  const [marketingSelection, setMarketingSelection] = useState<MarketingDrilldownSelection | null>(null);
+  const [marketingItems, setMarketingItems] = useState<MarketingDrilldownItemsPage | null>(null);
+  const [marketingLoading, setMarketingLoading] = useState(false);
   const [issues, setIssues] = useState<IssueReport[]>([]);
   const [issueTags, setIssueTags] = useState<IssueTag[]>([]);
   const [wins, setWins] = useState<WinReport[]>([]);
@@ -334,6 +355,10 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
     values: Record<number, string>;
     projectedValue: string;
     notApplicable: boolean;
+    valueMode: "manual" | "financial_drilldown" | "marketing_drilldown";
+    valueSource: "manual" | "financial_drilldown" | "marketing_drilldown" | "empty" | "not_applicable";
+    financialDrilldownValue: number | null;
+    marketingDrilldownValue: number | null;
   } | null>(null);
   const [monthlyPlanning, setMonthlyPlanning] = useState<{
     row: IndicatorTableRow;
@@ -346,7 +371,10 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
   const isExecutive = user.role === "executivo";
   const canEditMaturity = isExecutive || user.canEditIndicatorMaturity;
   const canAdmin = user.role === "executivo" || user.canAdminUsers;
-  const canUseCommercial = isExecutive || user.role === "executivo_visualizacao" || user.canAdminUsers;
+  const canUseCommercial = isExecutive || user.canViewCommercialDrilldown;
+  const canUseFinancial = isExecutive || user.canViewFinancialDrilldown || user.canEditFinancialDrilldown;
+  const canEditFinancial = isExecutive || user.canEditFinancialDrilldown;
+  const canUseMarketing = isExecutive || user.canViewMarketingDrilldown;
   const currentMonth = year === new Date().getFullYear() ? new Date().getMonth() + 1 : null;
 
   const filteredIndicators = useMemo(() => {
@@ -449,6 +477,50 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
     }
   }, [canUseCommercial, year]);
 
+  const loadFinancialDashboard = useCallback(async () => {
+    if (!canUseFinancial) return;
+    setFinancialLoading(true);
+    try {
+      setFinancialDashboard(await api<FinancialDrilldownDashboard>(`/api/financial-drilldown?year=${year}`));
+      setStatus("Drill Down Financeiro carregado.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao carregar Drill Down Financeiro.");
+    } finally {
+      setFinancialLoading(false);
+    }
+  }, [canUseFinancial, year]);
+
+  const loadMarketingDashboard = useCallback(async () => {
+    if (!canUseMarketing) return;
+    setMarketingLoading(true);
+    try {
+      setMarketingDashboard(await api<MarketingDrilldownDashboard>(`/api/marketing-drilldown?year=${year}`));
+      setStatus("Drill Down Marketing carregado.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao carregar Drill Down Marketing.");
+    } finally {
+      setMarketingLoading(false);
+    }
+  }, [canUseMarketing, year]);
+
+  const loadMarketingItems = useCallback(async (selection: MarketingDrilldownSelection) => {
+    const params = new URLSearchParams({
+      year: String(year),
+      metricKey: selection.metric.metricKey,
+      month: String(selection.month),
+      page: String(selection.page),
+      pageSize: "25",
+      sort: "date_desc"
+    });
+    if (!selection.row.isTotal) params.set("channel", selection.row.channel);
+    if (selection.query.trim()) params.set("q", selection.query.trim());
+    try {
+      setMarketingItems(await api<MarketingDrilldownItemsPage>(`/api/marketing-drilldown/items?${params.toString()}`));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao carregar cards de Marketing.");
+    }
+  }, [year]);
+
   const loadCommercialItems = useCallback(async (selection: CommercialDrilldownSelection) => {
     const params = new URLSearchParams({
       year: String(year),
@@ -528,11 +600,17 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
     if (activeTab === "issues") loadIssues();
     if (activeTab === "wins") loadWins();
     if (activeTab === "commercial") loadCommercialDashboard();
-  }, [activeTab, loadCommercialDashboard, loadIssues, loadWins]);
+    if (activeTab === "financial") loadFinancialDashboard();
+    if (activeTab === "marketing") loadMarketingDashboard();
+  }, [activeTab, loadCommercialDashboard, loadFinancialDashboard, loadIssues, loadMarketingDashboard, loadWins]);
 
   useEffect(() => {
     if (commercialSelection) loadCommercialItems(commercialSelection);
   }, [commercialSelection, loadCommercialItems]);
+
+  useEffect(() => {
+    if (marketingSelection) loadMarketingItems(marketingSelection);
+  }, [marketingSelection, loadMarketingItems]);
 
   function openCommercialDrilldown(metric: CommercialDrilldownMetric, row: CommercialDrilldownRow, month: number): void {
     const value = row.months[String(month)];
@@ -551,6 +629,71 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
       await loadCommercialDashboard();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Falha ao iniciar sincronizacao comercial.");
+    }
+  }
+
+  function formatMarketingValue(value: number | null, unit: "quantity" | "percentage"): string {
+    if (value == null || Number.isNaN(value)) return "-";
+    if (unit === "percentage") return `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
+    return value.toLocaleString("pt-BR", { maximumFractionDigits: Number.isInteger(value) ? 0 : 2 });
+  }
+
+  function openMarketingDrilldown(metric: MarketingDrilldownMetric, row: MarketingDrilldownRow, month: number): void {
+    const value = row.months[String(month)];
+    if (value == null) return;
+    setMarketingItems(null);
+    setMarketingSelection({ metric, row, month, page: 1, query: "" });
+  }
+
+  async function startMarketingSync(): Promise<void> {
+    try {
+      const result = await api<{ message: string }>("/api/marketing-drilldown/sync", {
+        method: "POST",
+        body: "{}"
+      });
+      setStatus(result.message || "Sincronizacao de Marketing solicitada.");
+      await loadMarketingDashboard();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao iniciar sincronizacao de Marketing.");
+    }
+  }
+
+  function formatFinancialValue(value: number | null, valueType: string): string {
+    if (value === null || value === undefined) return "-";
+    if (valueType === "money") return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    if (valueType === "percentage") return `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
+    return value.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+  }
+
+  async function saveFinancialValue(indicatorId: string, row: FinancialDrilldownRow, month: number): Promise<void> {
+    if (!row.unitId || !canEditFinancial) return;
+    const currentValue = row.months[String(month)];
+    const typedValue = window.prompt(
+      `${row.unitName} - ${months[month - 1]}/${year}`,
+      currentValue === null || currentValue === undefined ? "" : String(currentValue)
+    );
+    if (typedValue === null) return;
+    const normalized = typedValue.trim().replace(",", ".");
+    const value = normalized === "" ? null : Number(normalized);
+    if (normalized !== "" && Number.isNaN(value)) {
+      setStatus("Informe um numero valido para o valor financeiro.");
+      return;
+    }
+    try {
+      await api<{ status: string }>("/api/financial-drilldown/values", {
+        method: "POST",
+        body: JSON.stringify({
+          financialIndicatorId: indicatorId,
+          unitId: row.unitId,
+          year,
+          month,
+          value
+        })
+      });
+      setStatus("Valor financeiro salvo.");
+      await loadFinancialDashboard();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao salvar valor financeiro.");
     }
   }
 
@@ -578,6 +721,14 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
         payload,
         projectedValue: String(row.months.find((item) => item.month === month)?.projectedValue ?? ""),
         notApplicable: Boolean(row.months.find((item) => item.month === month)?.notApplicable),
+        valueMode: row.months.find((item) => item.month === month)?.valueSource === "financial_drilldown"
+          ? "financial_drilldown"
+          : row.months.find((item) => item.month === month)?.valueSource === "marketing_drilldown"
+            ? "marketing_drilldown"
+            : "manual",
+        valueSource: row.months.find((item) => item.month === month)?.valueSource ?? "empty",
+        financialDrilldownValue: row.months.find((item) => item.month === month)?.financialDrilldownValue ?? null,
+        marketingDrilldownValue: row.months.find((item) => item.month === month)?.marketingDrilldownValue ?? null,
         values: Object.fromEntries(payload.weeks.map((week) => [week.weekNumber, week.value == null ? "" : String(week.value)]))
       });
       setStatus(`Editando ${row.indicatorName} em ${months[month - 1]}/${year}.`);
@@ -614,18 +765,24 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
         .map(([weekNumber, value]) => ({ weekNumber: Number(weekNumber), value: value.trim() }))
         .filter((entry) => entry.value !== "");
 
+      await api(`/api/indicators/${weeklyEditor.row.indicatorId}/weekly-values?year=${year}&month=${weeklyEditor.month}`, {
+        method: "DELETE"
+      });
+
       await Promise.all(
-        entries.map((entry) =>
-          api(`/api/indicators/${weeklyEditor.row.indicatorId}/weekly-values`, {
-            method: "POST",
-            body: JSON.stringify({
-              year,
-              month: weeklyEditor.month,
-              weekNumber: entry.weekNumber,
-              value: entry.value
-            })
-          })
-        )
+        weeklyEditor.valueMode === "manual"
+          ? entries.map((entry) =>
+              api(`/api/indicators/${weeklyEditor.row.indicatorId}/weekly-values`, {
+                method: "POST",
+                body: JSON.stringify({
+                  year,
+                  month: weeklyEditor.month,
+                  weekNumber: entry.weekNumber,
+                  value: entry.value
+                })
+              })
+            )
+          : []
       );
 
       if (user.canEditProjectedValue) {
@@ -644,7 +801,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
         body: JSON.stringify({
           year,
           month: weeklyEditor.month,
-          notApplicable: weeklyEditor.notApplicable
+          notApplicable: weeklyEditor.valueMode === "financial_drilldown" || weeklyEditor.valueMode === "marketing_drilldown" ? false : weeklyEditor.notApplicable
         })
       });
 
@@ -1260,6 +1417,16 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
             Drill Down Comercial
           </button>
         ) : null}
+        {canUseFinancial ? (
+          <button className={`tab-btn ${activeTab === "financial" ? "active" : ""}`} type="button" onClick={() => setActiveTab("financial")}>
+            Drill Down Financeiro
+          </button>
+        ) : null}
+        {canUseMarketing ? (
+          <button className={`tab-btn ${activeTab === "marketing" ? "active" : ""}`} type="button" onClick={() => setActiveTab("marketing")}>
+            Drill Down Marketing
+          </button>
+        ) : null}
         {canUseIssues ? (
           <button className={`tab-btn ${activeTab === "issues" ? "active" : ""}`} type="button" onClick={() => setActiveTab("issues")}>
             Issue Reports
@@ -1393,6 +1560,8 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                           >
                             <div className="month-cell">
                               <span className={item.belowTarget ? "month-value below-target" : "month-value"}>{item.notApplicable ? "N/A" : formatNumber(item.value)}</span>
+                              {item.valueSource === "financial_drilldown" ? <span className="month-source">DD Fin.</span> : null}
+                              {item.valueSource === "marketing_drilldown" ? <span className="month-source">DD Mkt.</span> : null}
                               <span className="month-projected">Proj. {formatNumber(item.projectedValue)}</span>
                               <span className="month-target">Meta {formatNumber(item.monthlyTarget)}</span>
                             </div>
@@ -1559,6 +1728,196 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                     className="secondary"
                     disabled={commercialItems.page * commercialItems.pageSize >= commercialItems.totalItems}
                     onClick={() => setCommercialSelection({ ...commercialSelection, page: commercialSelection.page + 1 })}
+                  >
+                    Proxima
+                  </button>
+                </div>
+              ) : null}
+            </aside>
+          ) : null}
+        </section>
+      ) : activeTab === "financial" ? (
+        <section className="card app-view financial-view">
+          <div className="toolbar">
+            <div>
+              <h2>Drill Down Financeiro</h2>
+              <p className="muted">
+                {financialDashboard ? `${financialDashboard.units.length} unidades ativas - ${financialDashboard.indicators.length} indicadores` : "Valores mensais manuais por unidade."}
+              </p>
+            </div>
+            <div className="toolbar-actions">
+              {canEditFinancial ? <span className="status-pill">Edicao liberada</span> : null}
+              <button type="button" onClick={loadFinancialDashboard} disabled={financialLoading}>Recarregar</button>
+            </div>
+          </div>
+
+          {financialDashboard?.tables.map((table) => (
+            <section className="commercial-metric" key={table.indicator.id}>
+              <div className="toolbar commercial-metric-title">
+                <h3>{table.indicator.name}</h3>
+                <span className="muted">{table.indicator.aggregationType} - {table.indicator.valueType}</span>
+              </div>
+              <div className="table-wrap commercial-table-wrap">
+                <table className="commercial-table financial-table">
+                  <thead>
+                    <tr>
+                      <th className="commercial-responsible-col">Unidade</th>
+                      {months.map((month) => <th key={month}>{month}</th>)}
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {table.rows.map((row) => (
+                      <tr key={`${table.indicator.id}-${row.isTotal ? "total" : row.unitId}`} className={row.isTotal ? "commercial-total-row" : ""}>
+                        <td className="commercial-responsible-col">{row.unitName}</td>
+                        {months.map((monthLabel, index) => {
+                          const month = index + 1;
+                          const value = row.months[String(month)];
+                          const isEditable = canEditFinancial && !row.isTotal;
+                          const empty = value === null || value === undefined;
+                          return (
+                            <td
+                              key={monthLabel}
+                              className={`${isEditable ? "clickable-cell " : ""}commercial-value-cell financial-value-cell ${empty ? "empty-value-cell" : ""}`.trim()}
+                              onClick={() => isEditable && saveFinancialValue(table.indicator.id, row, month)}
+                              title={isEditable ? "Editar valor mensal" : empty ? "Sem valor informado" : undefined}
+                            >
+                              {formatFinancialValue(value, table.indicator.valueType)}
+                            </td>
+                          );
+                        })}
+                        <td className="commercial-summary-cell">{formatFinancialValue(row.periodTotal, table.indicator.valueType)}</td>
+                      </tr>
+                    ))}
+                    {table.rows.length === 0 ? <tr><td colSpan={14} className="muted">Sem unidades financeiras ativas.</td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ))}
+
+          {!financialDashboard || financialDashboard.tables.length === 0 ? (
+            <p className="muted">{financialLoading ? "Carregando Drill Down Financeiro..." : "Nenhum indicador financeiro cadastrado."}</p>
+          ) : null}
+        </section>
+      ) : activeTab === "marketing" ? (
+        <section className="card app-view commercial-view">
+          <div className="toolbar">
+            <div>
+              <h2>Drill Down Marketing</h2>
+              <p className="muted">
+                Ultima sincronizacao: {marketingDashboard?.lastSuccessfulSyncAt ? new Date(marketingDashboard.lastSuccessfulSyncAt).toLocaleString("pt-BR") : "-"}
+              </p>
+            </div>
+            <div className="toolbar-actions">
+              {marketingDashboard?.activeJob ? <span className="status-pill">Sincronizacao em andamento</span> : null}
+              {canAdmin ? <button type="button" className="secondary" onClick={startMarketingSync}>Sincronizar agora</button> : null}
+              <button type="button" onClick={loadMarketingDashboard} disabled={marketingLoading}>Recarregar</button>
+            </div>
+          </div>
+
+          {marketingDashboard?.metrics.map((metric) => (
+            <section className="commercial-metric" key={metric.metricKey}>
+              <div className="toolbar commercial-metric-title">
+                <h3>{metric.label}</h3>
+                <span className="muted">{metric.kind === "ratio" ? "Taxa" : "Fluxo"} - {metric.unit === "percentage" ? "%" : "Qtd."}</span>
+              </div>
+              <div className="table-wrap commercial-table-wrap">
+                <table className="commercial-table marketing-table">
+                  <thead>
+                    <tr>
+                      <th className="commercial-responsible-col">Canal</th>
+                      {months.map((month) => <th key={month}>{month}</th>)}
+                      <th>{metric.summaryLabel}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metric.rows.map((row) => (
+                      <tr key={`${metric.metricKey}-${row.isTotal ? "total" : row.channel}`} className={row.isTotal ? "commercial-total-row" : ""}>
+                        <td className="commercial-responsible-col">{row.channel}</td>
+                        {months.map((monthLabel, index) => {
+                          const month = index + 1;
+                          const value = row.months[String(month)];
+                          const clickable = value != null;
+                          return (
+                            <td
+                              key={monthLabel}
+                              className={clickable ? "clickable-cell commercial-value-cell" : "commercial-value-cell empty-value-cell"}
+                              onClick={() => clickable && openMarketingDrilldown(metric, row, month)}
+                              title={clickable ? "Abrir Drill Down" : undefined}
+                            >
+                              {formatMarketingValue(value, metric.unit)}
+                            </td>
+                          );
+                        })}
+                        <td className="commercial-summary-cell">{formatMarketingValue(row.annualSummary, metric.unit)}</td>
+                      </tr>
+                    ))}
+                    {metric.rows.length === 0 ? <tr><td colSpan={14} className="muted">Sem dados de Marketing para o ano.</td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ))}
+
+          {!marketingDashboard || marketingDashboard.metrics.length === 0 ? (
+            <p className="muted">{marketingLoading ? "Carregando Drill Down Marketing..." : "Nenhum dado de Marketing encontrado."}</p>
+          ) : null}
+
+          {marketingSelection ? (
+            <aside className="side-panel">
+              <div className="toolbar">
+                <div>
+                  <h3>{marketingSelection.metric.label}</h3>
+                  <p className="muted">
+                    {marketingSelection.row.isTotal ? "Total" : marketingSelection.row.channel} - {months[marketingSelection.month - 1]}/{year}
+                  </p>
+                </div>
+                <button type="button" className="secondary" onClick={() => setMarketingSelection(null)}>Fechar</button>
+              </div>
+              <label>
+                Buscar Card
+                <input
+                  value={marketingSelection.query}
+                  onChange={(event) => {
+                    setMarketingItems(null);
+                    setMarketingSelection({ ...marketingSelection, query: event.target.value, page: 1 });
+                  }}
+                />
+              </label>
+              <div className="commercial-drill-list">
+                {(marketingItems?.items ?? []).map((item: MarketingDrilldownItem) => (
+                  <article className="commercial-drill-card" key={`${item.dealId}-${item.stageId ?? "stage"}`}>
+                    <div className="toolbar">
+                      <strong>#{item.dealId} {item.title ?? ""}</strong>
+                      {item.bitrixUrl ? <a href={item.bitrixUrl} target="_blank" rel="noreferrer">Abrir Bitrix</a> : null}
+                    </div>
+                    <p className="muted">{item.channel} - {item.stageName ?? item.stageId ?? "-"}</p>
+                    <p>
+                      {item.eventDate ? new Date(item.eventDate).toLocaleDateString("pt-BR") : "-"}
+                      {item.numeratorContribution ? " | Numerador" : item.denominatorContribution ? " | Denominador" : ""}
+                    </p>
+                  </article>
+                ))}
+                {marketingItems && marketingItems.items.length === 0 ? <p className="muted">Nenhum Card encontrado.</p> : null}
+                {!marketingItems ? <p className="muted">Carregando Cards...</p> : null}
+              </div>
+              {marketingItems ? (
+                <div className="toolbar-actions">
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={marketingSelection.page <= 1}
+                    onClick={() => setMarketingSelection({ ...marketingSelection, page: marketingSelection.page - 1 })}
+                  >
+                    Anterior
+                  </button>
+                  <span className="muted">Pagina {marketingItems.page} de {Math.max(1, Math.ceil(marketingItems.totalItems / marketingItems.pageSize))}</span>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={marketingItems.page * marketingItems.pageSize >= marketingItems.totalItems}
+                    onClick={() => setMarketingSelection({ ...marketingSelection, page: marketingSelection.page + 1 })}
                   >
                     Proxima
                   </button>
@@ -2135,12 +2494,71 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
             <h2>Valores mensais</h2>
             <p className="muted">{weeklyEditor.row.indicatorName} - {months[weeklyEditor.month - 1]}/{year}</p>
             <div className="form-grid">
+              {weeklyEditor.financialDrilldownValue != null ? (
+                <fieldset className="option-panel">
+                  <legend>Origem do valor real</legend>
+                  <p className="muted">
+                    Consolidado atual do Drill Down Financeiro: {formatNumber(weeklyEditor.financialDrilldownValue)}
+                    {weeklyEditor.row.unit ? ` ${weeklyEditor.row.unit}` : ""}
+                  </p>
+                  <label className="radio-line">
+                    <input
+                      type="radio"
+                      checked={weeklyEditor.valueMode === "manual"}
+                      onChange={() => setWeeklyEditor((current) => (current ? { ...current, valueMode: "manual" } : current))}
+                    />
+                    Preencher valores manualmente
+                  </label>
+                  <label className="radio-line">
+                    <input
+                      type="radio"
+                      checked={weeklyEditor.valueMode === "financial_drilldown"}
+                      onChange={() =>
+                        setWeeklyEditor((current) =>
+                          current ? { ...current, valueMode: "financial_drilldown", notApplicable: false } : current
+                        )
+                      }
+                    />
+                    Usar consolidado do Drill Down
+                  </label>
+                </fieldset>
+              ) : null}
+              {weeklyEditor.marketingDrilldownValue != null ? (
+                <fieldset className="option-panel">
+                  <legend>Origem do valor real</legend>
+                  <p className="muted">
+                    Consolidado atual do Drill Down Marketing: {formatNumber(weeklyEditor.marketingDrilldownValue)}
+                    {weeklyEditor.row.unit ? ` ${weeklyEditor.row.unit}` : ""}
+                  </p>
+                  <label className="radio-line">
+                    <input
+                      type="radio"
+                      checked={weeklyEditor.valueMode === "manual"}
+                      onChange={() => setWeeklyEditor((current) => (current ? { ...current, valueMode: "manual" } : current))}
+                    />
+                    Preencher valores manualmente
+                  </label>
+                  <label className="radio-line">
+                    <input
+                      type="radio"
+                      checked={weeklyEditor.valueMode === "marketing_drilldown"}
+                      onChange={() =>
+                        setWeeklyEditor((current) =>
+                          current ? { ...current, valueMode: "marketing_drilldown", notApplicable: false } : current
+                        )
+                      }
+                    />
+                    Usar consolidado do Drill Down
+                  </label>
+                </fieldset>
+              ) : null}
               {weeklyEditor.payload.weeks.map((week) => (
                 <label key={week.weekNumber}>
                   {week.label}
                   <input
                     type="number"
                     step="0.01"
+                    disabled={weeklyEditor.valueMode !== "manual"}
                     value={weeklyEditor.values[week.weekNumber] ?? ""}
                     onChange={(event) =>
                       setWeeklyEditor((current) =>
@@ -2172,6 +2590,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                 <input
                   type="checkbox"
                   checked={weeklyEditor.notApplicable}
+                  disabled={weeklyEditor.valueMode !== "manual"}
                   onChange={(event) =>
                     setWeeklyEditor((current) => (current ? { ...current, notApplicable: event.target.checked } : current))
                   }

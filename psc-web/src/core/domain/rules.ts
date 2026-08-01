@@ -93,7 +93,7 @@ export function ensureCanUseIssueReports(user: User): void {
 
 export function ensureCanUseCommercialDrilldown(user: User): void {
   ensureUserActive(user);
-  if (user.role === "executivo" || user.role === "executivo_visualizacao" || user.canAdminUsers) return;
+  if (user.role === "executivo" || user.canViewCommercialDrilldown) return;
   throw new AuthorizationError("Usuario sem permissao para acessar Drill Down Comercial.");
 }
 
@@ -101,6 +101,24 @@ export function ensureCanStartCommercialSync(user: User): void {
   ensureUserActive(user);
   if (user.canAdminUsers) return;
   throw new AuthorizationError("Somente Admin pode iniciar sincronizacao comercial.");
+}
+
+export function ensureCanUseMarketingDrilldown(user: User): void {
+  ensureUserActive(user);
+  if (user.role === "executivo" || user.canViewMarketingDrilldown) return;
+  throw new AuthorizationError("Usuario sem permissao para acessar Drill Down Marketing.");
+}
+
+export function ensureCanViewFinancialDrilldown(user: User): void {
+  ensureUserActive(user);
+  if (user.role === "executivo" || user.canViewFinancialDrilldown || user.canEditFinancialDrilldown) return;
+  throw new AuthorizationError("Usuario sem permissao para acessar Drill Down Financeiro.");
+}
+
+export function ensureCanEditFinancialDrilldown(user: User): void {
+  ensureCanViewFinancialDrilldown(user);
+  if (user.role === "executivo" || user.canEditFinancialDrilldown) return;
+  throw new AuthorizationError("Usuario sem permissao para editar Drill Down Financeiro.");
 }
 
 export function ensureExecutiveIssueAccess(user: User): void {
