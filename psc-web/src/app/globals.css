@@ -324,13 +324,20 @@ thead th {
 }
 
 .commercial-table {
-  min-width: 1040px;
+  min-width: 1880px;
   table-layout: fixed;
 }
 
 .commercial-table th,
 .commercial-table td {
   background: #fff;
+}
+
+.commercial-table th:not(.commercial-responsible-col),
+.commercial-table td:not(.commercial-responsible-col) {
+  min-width: 130px;
+  width: 130px;
+  max-width: 130px;
 }
 
 .commercial-responsible-col {
@@ -346,18 +353,68 @@ thead th {
 
 .commercial-value-cell {
   font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .commercial-summary-cell {
-  min-width: 110px;
-  width: 110px;
+  min-width: 140px;
+  width: 140px;
+  max-width: 140px;
   font-weight: 700;
   background: #f7f9fc !important;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.financial-table th:not(.commercial-responsible-col),
+.financial-value-cell {
+  min-width: 120px;
+  width: 120px;
+  max-width: 120px;
+}
+
+.empty-value-cell {
+  color: var(--muted);
+  background: #fafafa !important;
 }
 
 .commercial-total-row td {
   font-weight: 700;
   background: #f8fafc;
+}
+
+.month-source {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #2563eb;
+}
+
+.option-panel {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f8fafc;
+}
+
+.option-panel legend {
+  padding: 0 4px;
+  font-weight: 700;
+}
+
+.option-panel p {
+  margin: 0;
+}
+
+.radio-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .inactive-badge,

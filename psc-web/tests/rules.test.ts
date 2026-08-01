@@ -5,6 +5,9 @@ import {
   calculateMonthlyValue,
   classifyPerformance,
   ensureCanEditIndicatorMaturity,
+  ensureCanEditFinancialDrilldown,
+  ensureCanUseCommercialDrilldown,
+  ensureCanViewFinancialDrilldown,
   ensureCanViewIndicator,
   validateConfidenceLevel
 } from "../src/core/domain/rules";
@@ -22,6 +25,10 @@ const baseUser: User = {
   canEditIndicatorMaturity: false,
   canUseIssueReports: false,
   canAdminUsers: false,
+  canViewCommercialDrilldown: false,
+  canViewMarketingDrilldown: false,
+  canViewFinancialDrilldown: false,
+  canEditFinancialDrilldown: false,
   bitrixUserId: "42",
   bitrixPortalDomain: "portal.bitrix24.com.br"
 };
@@ -68,6 +75,14 @@ describe("rules", () => {
       ensureCanEditIndicatorMaturity({ ...baseUser, role: "executivo_visualizacao", canEditIndicatorMaturity: true }, indicator)
     ).not.toThrow();
     expect(() => ensureCanEditIndicatorMaturity({ ...baseUser, role: "executivo" }, indicator)).not.toThrow();
+  });
+
+  it("uses explicit Drill Down permissions", () => {
+    expect(() => ensureCanUseCommercialDrilldown(baseUser)).toThrow(AuthorizationError);
+    expect(() => ensureCanUseCommercialDrilldown({ ...baseUser, canViewCommercialDrilldown: true })).not.toThrow();
+    expect(() => ensureCanViewFinancialDrilldown({ ...baseUser, canEditFinancialDrilldown: true })).not.toThrow();
+    expect(() => ensureCanEditFinancialDrilldown({ ...baseUser, canViewFinancialDrilldown: true })).toThrow(AuthorizationError);
+    expect(() => ensureCanEditFinancialDrilldown({ ...baseUser, role: "executivo" })).not.toThrow();
   });
 
   it("classifies performance scale boundaries", () => {

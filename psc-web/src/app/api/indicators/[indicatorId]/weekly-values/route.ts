@@ -65,3 +65,23 @@ export async function POST(request: Request, context: { params: Promise<{ indica
     return jsonError(error);
   }
 }
+
+export async function DELETE(request: NextRequest, context: { params: Promise<{ indicatorId: string }> }) {
+  try {
+    const user = await getCurrentUser();
+    const params = await context.params;
+    const year = Number(request.nextUrl.searchParams.get("year"));
+    const month = Number(request.nextUrl.searchParams.get("month"));
+    ensureMonth(month);
+    if (!Number.isFinite(year) || year < 2000 || year > 2100) throw new ValidationError("Ano invalido.");
+
+    const container = buildContainer();
+    const indicator = await container.indicatorRepository.getById(params.indicatorId);
+    if (!indicator) throw new NotFoundError("Indicador nao encontrado.");
+    ensureCanEditWeeklyValue(user, indicator);
+    await container.indicatorRepository.deleteWeeklyValuesForMonth(indicator.id, year, month);
+    return NextResponse.json({ indicatorId: indicator.id, year, month, status: "deleted" });
+  } catch (error) {
+    return jsonError(error);
+  }
+}

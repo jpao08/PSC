@@ -15,6 +15,10 @@ const admin: User = {
   canEditIndicatorMaturity: true,
   canUseIssueReports: true,
   canAdminUsers: true,
+  canViewCommercialDrilldown: true,
+  canViewMarketingDrilldown: true,
+  canViewFinancialDrilldown: true,
+  canEditFinancialDrilldown: true,
   bitrixUserId: "1",
   bitrixPortalDomain: "portal"
 };
@@ -29,7 +33,11 @@ describe("ProvisionBitrixUser", () => {
       canEditProjectedValue: false,
       canEditIndicatorMaturity: true,
       canUseIssueReports: true,
-      canAdminUsers: false
+      canAdminUsers: false,
+      canViewCommercialDrilldown: true,
+      canViewMarketingDrilldown: false,
+      canViewFinancialDrilldown: false,
+      canEditFinancialDrilldown: true
     };
     const repository: UserRepositoryPort = {
       getById: async () => null,
@@ -49,6 +57,10 @@ describe("ProvisionBitrixUser", () => {
         canEditIndicatorMaturity: input.canEditIndicatorMaturity,
         canUseIssueReports: input.canUseIssueReports,
         canAdminUsers: input.canAdminUsers,
+        canViewCommercialDrilldown: input.canViewCommercialDrilldown,
+        canViewMarketingDrilldown: input.canViewMarketingDrilldown,
+        canViewFinancialDrilldown: input.canViewFinancialDrilldown || input.canEditFinancialDrilldown,
+        canEditFinancialDrilldown: input.canEditFinancialDrilldown,
         bitrixUserId: input.bitrixUser.id,
         bitrixPortalDomain: input.bitrixUser.portalDomain ?? null
       })
@@ -57,5 +69,6 @@ describe("ProvisionBitrixUser", () => {
     const created = await new ProvisionBitrixUser(repository).execute(admin, payload);
     expect(created.bitrixUserId).toBe("99");
     expect(created.canUseIssueReports).toBe(true);
+    expect(created.canViewFinancialDrilldown).toBe(true);
   });
 });

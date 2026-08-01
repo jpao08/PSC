@@ -45,7 +45,15 @@ class User:
     is_active: bool
     password_hash: str
     can_edit_projected_value: bool = False
+    can_edit_indicator_maturity: bool = False
     can_use_issue_reports: bool = False
+    can_admin_users: bool = False
+    can_view_commercial_drilldown: bool = False
+    can_view_marketing_drilldown: bool = False
+    can_view_financial_drilldown: bool = False
+    can_edit_financial_drilldown: bool = False
+    bitrix_user_id: str | None = None
+    bitrix_portal_domain: str | None = None
     area_ids: list[str] | None = None
 
 

@@ -12,6 +12,10 @@ type FormState = {
   canEditIndicatorMaturity: boolean;
   canUseIssueReports: boolean;
   canAdminUsers: boolean;
+  canViewCommercialDrilldown: boolean;
+  canViewMarketingDrilldown: boolean;
+  canViewFinancialDrilldown: boolean;
+  canEditFinancialDrilldown: boolean;
 };
 
 const defaultForm: FormState = {
@@ -21,7 +25,11 @@ const defaultForm: FormState = {
   canEditProjectedValue: false,
   canEditIndicatorMaturity: false,
   canUseIssueReports: false,
-  canAdminUsers: false
+  canAdminUsers: false,
+  canViewCommercialDrilldown: false,
+  canViewMarketingDrilldown: false,
+  canViewFinancialDrilldown: false,
+  canEditFinancialDrilldown: false
 };
 
 export default function AdminClient({ initialUser }: { initialUser: User }) {
@@ -57,7 +65,11 @@ export default function AdminClient({ initialUser }: { initialUser: User }) {
       canEditProjectedValue: existingUser.canEditProjectedValue,
       canEditIndicatorMaturity: existingUser.canEditIndicatorMaturity,
       canUseIssueReports: existingUser.canUseIssueReports,
-      canAdminUsers: existingUser.canAdminUsers
+      canAdminUsers: existingUser.canAdminUsers,
+      canViewCommercialDrilldown: existingUser.canViewCommercialDrilldown,
+      canViewMarketingDrilldown: existingUser.canViewMarketingDrilldown,
+      canViewFinancialDrilldown: existingUser.canViewFinancialDrilldown || existingUser.canEditFinancialDrilldown,
+      canEditFinancialDrilldown: existingUser.canEditFinancialDrilldown
     });
   }, [existingUser]);
 
@@ -227,6 +239,51 @@ export default function AdminClient({ initialUser }: { initialUser: User }) {
             </label>
           </div>
 
+          <fieldset className="gut-fieldset">
+            <legend>Permissoes de acesso aos Drill Downs</legend>
+            <div className="gut-inputs">
+              <label className="checkbox-line">
+                <input
+                  type="checkbox"
+                  checked={form.canViewCommercialDrilldown}
+                  onChange={(event) => setForm({ ...form, canViewCommercialDrilldown: event.target.checked })}
+                />
+                Ver Drill Down Comercial
+              </label>
+              <label className="checkbox-line">
+                <input
+                  type="checkbox"
+                  checked={form.canViewMarketingDrilldown}
+                  onChange={(event) => setForm({ ...form, canViewMarketingDrilldown: event.target.checked })}
+                />
+                Ver Drill Down Marketing
+              </label>
+              <label className="checkbox-line">
+                <input
+                  type="checkbox"
+                  checked={form.canViewFinancialDrilldown || form.canEditFinancialDrilldown}
+                  disabled={form.canEditFinancialDrilldown}
+                  onChange={(event) => setForm({ ...form, canViewFinancialDrilldown: event.target.checked })}
+                />
+                Ver Drill Down Financeiro
+              </label>
+              <label className="checkbox-line">
+                <input
+                  type="checkbox"
+                  checked={form.canEditFinancialDrilldown}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      canEditFinancialDrilldown: event.target.checked,
+                      canViewFinancialDrilldown: event.target.checked ? true : form.canViewFinancialDrilldown
+                    })
+                  }
+                />
+                Editar Drill Down Financeiro
+              </label>
+            </div>
+          </fieldset>
+
           <div className="toolbar-actions">
             <button type="submit">{existingUser ? "Atualizar usuário" : "Habilitar usuário"}</button>
             <button type="button" className="secondary" onClick={() => { setSelectedBitrixUser(null); setQuery(""); setForm(defaultForm); }}>
@@ -255,6 +312,10 @@ export default function AdminClient({ initialUser }: { initialUser: User }) {
                     user.canEditProjectedValue ? "Projeção" : "",
                     user.canEditIndicatorMaturity ? "Maturidade" : "",
                     user.canUseIssueReports ? "Issue Reports" : "",
+                    user.canViewCommercialDrilldown ? "Comercial" : "",
+                    user.canViewMarketingDrilldown ? "Marketing" : "",
+                    user.canViewFinancialDrilldown ? "Financeiro" : "",
+                    user.canEditFinancialDrilldown ? "Edita financeiro" : "",
                     user.canAdminUsers ? "Admin usuários" : ""
                   ].filter(Boolean).join(", ") || "-"}</td>
                   <td>{user.isActive ? "Ativo" : "Inativo"}</td>

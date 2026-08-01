@@ -194,7 +194,15 @@ def _serialize_user(user: User) -> dict[str, Any]:
         "area_ids": user.area_ids or ([user.area_id] if user.area_id else []),
         "is_active": user.is_active,
         "can_edit_projected_value": user.can_edit_projected_value,
+        "can_edit_indicator_maturity": user.can_edit_indicator_maturity,
         "can_use_issue_reports": user.can_use_issue_reports,
+        "can_admin_users": user.can_admin_users,
+        "can_view_commercial_drilldown": user.can_view_commercial_drilldown,
+        "can_view_marketing_drilldown": user.can_view_marketing_drilldown,
+        "can_view_financial_drilldown": user.can_view_financial_drilldown,
+        "can_edit_financial_drilldown": user.can_edit_financial_drilldown,
+        "bitrix_user_id": user.bitrix_user_id,
+        "bitrix_portal_domain": user.bitrix_portal_domain,
     }
 
 
