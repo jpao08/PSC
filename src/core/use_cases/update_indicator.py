@@ -26,6 +26,7 @@ class UpdateIndicator:
         description: str | None,
         aggregation_type: str,
         unit_id: str,
+        formula: str | None = None,
         maturity_level: Decimal | None = None,
     ) -> Indicator:
         ensure_user_active(user)
@@ -56,6 +57,7 @@ class UpdateIndicator:
                 name=clean_name,
                 area_id=clean_area_id,
                 description=description.strip() if description else None,
+                formula=formula.strip() if formula else None,
                 aggregation_type=aggregation_type,
                 unit_id=clean_unit_id,
                 maturity_level=ensure_maturity_level(maturity_level),

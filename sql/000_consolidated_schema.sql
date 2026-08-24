@@ -97,7 +97,7 @@ create table if not exists indicator_values (
 
 create table if not exists indicator_value_history (
   id uuid primary key default gen_random_uuid(),
-  indicator_value_id uuid null references indicator_values(id),
+  indicator_value_id uuid null references indicator_values(id) on delete set null,
   indicator_id uuid not null references indicators(id),
   year int not null,
   month int not null check (month between 1 and 12),
@@ -239,7 +239,7 @@ create extension if not exists "pgcrypto";
 
 create table if not exists indicator_value_history (
   id uuid primary key default gen_random_uuid(),
-  indicator_value_id uuid null references indicator_values(id),
+  indicator_value_id uuid null references indicator_values(id) on delete set null,
   indicator_id uuid not null references indicators(id),
   year int not null,
   month int not null check (month between 1 and 12),

@@ -36,10 +36,15 @@ import {
   WinReportRepositoryPort
 } from "@/core/ports/repositories";
 import {
+  buildQuarterSummary,
   calculateAchievementPercent,
   calculateAnnualValue,
   calculateMonthlyValue,
   classifyPerformance,
+  getCurrentQuarterForYear,
+  getIndicatorTypeLabel,
+  getLastClosedQuarterForYear,
+  getQuarterMonths,
   getUserAreaIds
 } from "@/core/domain/rules";
 
@@ -650,6 +655,7 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
     areaId: string;
     name: string;
     description: string | null;
+    formula: string | null;
     aggregationType: AggregationType;
     unitId: string;
     maturityLevel: number | null;
@@ -662,6 +668,7 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
         area_id: input.areaId,
         name: input.name,
         description: input.description,
+        formula: input.formula,
         aggregation_type: input.aggregationType,
         unit_id: input.unitId,
         unit: unit?.label ?? null,
@@ -679,6 +686,7 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
     areaId: string;
     name: string;
     description: string | null;
+    formula: string | null;
     aggregationType: AggregationType;
     unitId: string;
     maturityLevel: number | null;
@@ -690,6 +698,7 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
         area_id: input.areaId,
         name: input.name,
         description: input.description,
+        formula: input.formula,
         aggregation_type: input.aggregationType,
         unit_id: input.unitId,
         unit: unit?.label ?? null,
@@ -769,6 +778,17 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
     if (error) throw error;
   }
 
+  async deleteWeeklyValue(indicatorId: string, year: number, month: number, weekNumber: number): Promise<void> {
+    const { error } = await this.client
+      .from("indicator_values")
+      .delete()
+      .eq("indicator_id", indicatorId)
+      .eq("year", year)
+      .eq("month", month)
+      .eq("week_number", weekNumber);
+    if (error) throw error;
+  }
+
   async deleteWeeklyValuesForMonth(indicatorId: string, year: number, month: number): Promise<void> {
     const { error } = await this.client
       .from("indicator_values")
@@ -809,76 +829,6 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
       annualTarget: asNumber(row.annual_target),
       confidenceLevel: asNumber(row.confidence_level)
     }));
-  }
-
-  async listFinancialMonthlyTotals(indicatorIds: string[], year: number): Promise<Array<{ indicatorId: string; month: number; value: number }>> {
-    if (indicatorIds.length === 0) return [];
-    const { data, error } = await this.client
-      .from("financial_indicator_values")
-      .select("financial_indicator_id,reference_month,value")
-      .in("financial_indicator_id", indicatorIds)
-      .gte("reference_month", `${year}-01-01`)
-      .lte("reference_month", `${year}-12-01`);
-    if (error) throw error;
-
-    const totals = new Map<string, { indicatorId: string; month: number; value: number }>();
-    for (const row of data ?? []) {
-      const value = asNumber(row.value);
-      if (value == null) continue;
-      const indicatorId = asString(row.financial_indicator_id);
-      const month = Number(String(row.reference_month ?? "").slice(5, 7));
-      if (!indicatorId || !Number.isInteger(month) || month < 1 || month > 12) continue;
-      const key = `${indicatorId}|${month}`;
-      const current = totals.get(key);
-      totals.set(key, { indicatorId, month, value: (current?.value ?? 0) + value });
-    }
-    return [...totals.values()];
-  }
-
-  async listMarketingMonthlyTotals(indicators: Indicator[], year: number): Promise<Array<{ indicatorId: string; month: number; value: number }>> {
-    const marketingIndicators = indicators.filter((indicator) => indicator.areaId === "728d3cfa-3770-4882-83ae-a8a1ed86663e");
-    if (marketingIndicators.length === 0) return [];
-    const metricByIndicatorName = new Map(defaultMarketingMetrics.map((metric) => [normalizeIndicatorName(metric.indicatorName), metric]));
-    const indicatorByMetric = new Map<string, Indicator>();
-    for (const indicator of marketingIndicators) {
-      const metric = metricByIndicatorName.get(normalizeIndicatorName(indicator.name));
-      if (metric) indicatorByMetric.set(metric.metricKey, indicator);
-    }
-    if (indicatorByMetric.size === 0) return [];
-    const { data, error } = await this.client
-      .from("marketing_drilldown_monthly")
-      .select("metric_key,reference_month,quantity_value,numerator_value,denominator_value")
-      .in("metric_key", [...indicatorByMetric.keys()])
-      .eq("reference_year", year);
-    if (error) return [];
-
-    const flowTotals = new Map<string, { indicatorId: string; month: number; value: number }>();
-    const ratioTotals = new Map<string, { indicatorId: string; month: number; numerator: number; denominator: number }>();
-    for (const row of data ?? []) {
-      const metric = defaultMarketingMetrics.find((item) => item.metricKey === asString(row.metric_key));
-      const indicator = indicatorByMetric.get(asString(row.metric_key));
-      if (!metric || !indicator) continue;
-      const month = Number(row.reference_month);
-      const key = `${indicator.id}|${month}`;
-      if (!Number.isInteger(month) || month < 1 || month > 12) continue;
-      if (metric.kind === "ratio") {
-        const current = ratioTotals.get(key) ?? { indicatorId: indicator.id, month, numerator: 0, denominator: 0 };
-        current.numerator += asNumber(row.numerator_value) ?? 0;
-        current.denominator += asNumber(row.denominator_value) ?? 0;
-        ratioTotals.set(key, current);
-        continue;
-      }
-      const value = asNumber(row.quantity_value);
-      if (value == null) continue;
-      const current = flowTotals.get(key);
-      flowTotals.set(key, { indicatorId: indicator.id, month, value: (current?.value ?? 0) + value });
-    }
-    return [
-      ...flowTotals.values(),
-      ...[...ratioTotals.values()]
-        .map((item) => ({ indicatorId: item.indicatorId, month: item.month, value: ratioPercent(item.numerator, item.denominator) }))
-        .filter((item): item is { indicatorId: string; month: number; value: number } => item.value != null)
-    ];
   }
 
   async upsertMonthProjection(indicatorId: string, year: number, month: number, projectedValue: number, userId: string): Promise<void> {
@@ -979,8 +929,6 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
     const projections = await this.listMonthProjections(ids, year);
     const notApplicable = await this.listMonthNotApplicable(ids, year);
     const yearPlanning = await this.listYearPlanning(ids, year);
-    const financialTotals = await this.listFinancialMonthlyTotals(ids, year);
-    const marketingTotals = await this.listMarketingMonthlyTotals(indicators, year);
 
     return indicators
       .map((indicator) => {
@@ -990,32 +938,40 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
           const isNotApplicable = notApplicable.some((item) => item.indicatorId === indicator.id && item.month === month);
           const manualValues = values.filter((item) => item.indicatorId === indicator.id && item.month === month);
           const manualValue = calculateMonthlyValue(manualValues, indicator.aggregationType, year, month);
-          const financialDrilldownValue = financialTotals.find((item) => item.indicatorId === indicator.id && item.month === month)?.value ?? null;
-          const marketingDrilldownValue = marketingTotals.find((item) => item.indicatorId === indicator.id && item.month === month)?.value ?? null;
-          const monthlyValue = isNotApplicable ? null : manualValues.length > 0 ? manualValue : financialDrilldownValue ?? marketingDrilldownValue;
+          const monthlyValue = isNotApplicable ? null : manualValue;
           const valueSource: IndicatorTableRow["months"][number]["valueSource"] = isNotApplicable
             ? "not_applicable"
             : manualValues.length > 0
               ? "manual"
-              : financialDrilldownValue != null
-                ? "financial_drilldown"
-                : marketingDrilldownValue != null
-                  ? "marketing_drilldown"
-                  : "empty";
+              : "empty";
           const monthlyTarget = targets.find((item) => item.indicatorId === indicator.id && item.month === month)?.targetValue ?? null;
           const projectedValue = projections.find((item) => item.indicatorId === indicator.id && item.month === month)?.projectedValue ?? null;
+          const status = isNotApplicable ? "not_calculable" as const : monthlyValue != null ? "filled" as const : "pending" as const;
           return {
             month,
             value: monthlyValue,
             valueSource,
-            financialDrilldownValue,
-            marketingDrilldownValue,
+            financialDrilldownValue: null,
+            marketingDrilldownValue: null,
             projectedValue,
             monthlyTarget,
+            status,
             notApplicable: isNotApplicable,
             belowTarget: !isNotApplicable && monthlyValue != null && monthlyTarget != null && monthlyValue < monthlyTarget
           };
         });
+        const currentQuarter = getCurrentQuarterForYear(year);
+        const lastClosedQuarter = getLastClosedQuarterForYear(year);
+        const buildSummary = (quarter: 1 | 2 | 3 | 4, isClosed: boolean) =>
+          buildQuarterSummary({
+            quarter,
+            aggregationType: indicator.aggregationType,
+            monthValues: months
+              .filter((item) => getQuarterMonths(quarter).includes(item.month))
+              .map((item) => ({ month: item.month, value: item.value, target: item.monthlyTarget, status: item.status })),
+            annualTarget: planning?.annualTarget ?? null,
+            isClosed
+          });
         const annualReal = calculateAnnualValue(
           months.filter((item) => item.value != null).map((item) => ({ month: item.month, value: item.value as number })),
           indicator.aggregationType
@@ -1034,7 +990,9 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
           areaName: indicator.areaName,
           areaHexColor: indicator.areaHexColor,
           description: indicator.description,
+          formula: indicator.formula,
           aggregationType: indicator.aggregationType,
+          indicatorTypeLabel: getIndicatorTypeLabel(indicator.aggregationType),
           unitId: indicator.unitId,
           unit: indicator.unit,
           maturityLevel: indicator.maturityLevel,
@@ -1046,6 +1004,10 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
           maturityClassification: classifyPerformance(indicator.maturityLevel),
           confidenceClassification: classifyPerformance(planning?.confidenceLevel ?? null),
           projectedAchievementClassification: classifyPerformance(projectedAchievementPercent),
+          consolidation: {
+            lastClosedQuarter: lastClosedQuarter ? buildSummary(lastClosedQuarter, true) : null,
+            currentQuarter: buildSummary(currentQuarter, false)
+          },
           months
         };
       })
@@ -1062,6 +1024,7 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
       areaHexColor: asNullableString(areas?.hex_color),
       name: asString(row.name),
       description: asNullableString(row.description),
+      formula: asNullableString(row.formula),
       aggregationType: asString(row.aggregation_type) as Indicator["aggregationType"],
       unitId: asNullableString(row.unit_id),
       unit: asNullableString(unit?.label ?? row.unit),

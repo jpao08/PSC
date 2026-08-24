@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 Role = Literal[
     "gestor_area",
@@ -87,6 +87,7 @@ class Indicator:
     is_active: bool
     created_by: str | None
     maturity_level: Decimal | None = None
+    formula: str | None = None
 
 
 @dataclass(frozen=True)
@@ -108,12 +109,14 @@ class IndicatorTableRow:
     area_hex_color: str | None
     description: str | None
     aggregation_type: AggregationType
+    indicator_type_label: str
     unit_id: str | None
     unit: str | None
     maturity_level: Decimal | None
     monthly_values: dict[int, Decimal | None]
     monthly_projections: dict[int, Decimal | None]
     monthly_targets: dict[int, Decimal | None]
+    monthly_statuses: dict[int, str]
     not_applicable: dict[int, bool]
     below_target: dict[int, bool]
     annual_target: Decimal | None = None
@@ -124,6 +127,8 @@ class IndicatorTableRow:
     maturity_classification: str = "neutral"
     confidence_classification: str = "neutral"
     projected_achievement_classification: str = "neutral"
+    consolidation: dict[str, Any] | None = None
+    formula: str | None = None
 
 
 @dataclass(frozen=True)
@@ -221,6 +226,7 @@ class NewIndicator:
     unit_id: str
     maturity_level: Decimal | None
     created_by: str
+    formula: str | None = None
 
 
 IssueStatus = Literal[

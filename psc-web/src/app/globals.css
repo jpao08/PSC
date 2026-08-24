@@ -176,10 +176,10 @@ button:disabled {
 
 .indicator-table-shell {
   display: grid;
-  grid-template-columns: 427px minmax(260px, 1fr) 360px;
+  grid-template-columns: 560px minmax(640px, 1fr);
   gap: 10px;
   align-items: start;
-  min-width: 1040px;
+  min-width: 1220px;
   overflow: visible;
   background: transparent;
 }
@@ -229,15 +229,15 @@ table {
 }
 
 .indicator-col {
-  width: 205px;
+  width: 310px;
 }
 
 .area-col {
-  width: 130px;
+  width: 150px;
 }
 
 .maturity-col {
-  width: 92px;
+  width: 100px;
 }
 
 .annual-col {

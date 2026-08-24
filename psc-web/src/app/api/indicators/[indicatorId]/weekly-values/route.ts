@@ -42,16 +42,21 @@ export async function POST(request: Request, context: { params: Promise<{ indica
     const year = Number(payload.year);
     const month = Number(payload.month);
     const weekNumber = Number(payload.weekNumber ?? payload.week_number);
-    const value = Number(payload.value);
+    const rawValue = payload.value;
     ensureMonth(month);
     ensureWeek(weekNumber);
     if (!Number.isFinite(year) || year < 2000 || year > 2100) throw new ValidationError("Ano invalido.");
-    if (!Number.isFinite(value)) throw new ValidationError("Campo value deve ser numerico.");
 
     const container = buildContainer();
     const indicator = await container.indicatorRepository.getById(params.indicatorId);
     if (!indicator) throw new NotFoundError("Indicador nao encontrado.");
     ensureCanEditWeeklyValue(user, indicator);
+    if (rawValue == null || String(rawValue).trim() === "") {
+      await container.indicatorRepository.deleteWeeklyValue(indicator.id, year, month, weekNumber);
+      return NextResponse.json({ indicatorId: indicator.id, year, month, weekNumber, value: null, status: "deleted" });
+    }
+    const value = Number(rawValue);
+    if (!Number.isFinite(value)) throw new ValidationError("Campo value deve ser numerico.");
     await container.indicatorRepository.upsertWeeklyValue({
       indicatorId: indicator.id,
       year,

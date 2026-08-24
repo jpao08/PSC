@@ -1,163 +1,110 @@
-# Diagrama de Servicos: PSC
+# Diagrama De Servicos: PSC
 
-Data: 2026-07-31
-Escopo: executavel local, admin local, fork web `psc-web/` e sincronizacao comercial.
+Data: 2026-08-04
 
 ## Visao Geral
 
 ```mermaid
 flowchart LR
-  UsuarioLocal[Usuario local] --> ExeUI[UI estatica web/]
-  ExeUI --> FastAPI[FastAPI src/adapters/input/api_routes.py]
-  FastAPI --> PyUseCases[Python use cases]
-  PyUseCases --> PyDomain[Python domain rules]
-  PyUseCases --> PyRepos[Supabase repositories Python]
-  PyUseCases --> PyBitrix[Bitrix task gateway]
+  User[Usuario] --> Web[psc-web Next.js]
+  User --> Local[PSC.exe FastAPI + web/]
+  Admin[Admin] --> AdminLocal[PSC-Users-Admin.exe]
 
-  AdminLocal[Admin local] --> AdminUI[admin_web/]
-  AdminUI --> AdminAPI[FastAPI admin src/admin/users_app.py]
-  AdminAPI --> AdminRepo[AdminUserRepository]
+  Web --> DomainTS[Dominio TypeScript]
+  Web --> Supabase[(Supabase/Postgres)]
+  Web --> BitrixAuth[Bitrix OAuth/API]
 
-  UsuarioWeb[Usuario web] --> NextApp[Next.js App Router psc-web]
-  NextApp --> NextRoutes[Server routes psc-web/src/app/api]
-  NextRoutes --> TsUseCases[TypeScript use cases]
-  NextRoutes --> TsRepos[Supabase repositories TS]
-  NextRoutes --> BitrixOAuth[Bitrix OAuth/Webhook gateway]
+  Local --> DomainPY[Dominio Python]
+  Local --> Supabase
+  Local --> BitrixTasks[Bitrix24 Tasks]
 
-  SyncScheduler[Trigger externo/Supabase] --> EdgeFn[Edge Function commercial-sync]
-  EdgeFn --> BitrixCRM[Bitrix24 CRM API]
-  EdgeFn --> Supabase[(Supabase/Postgres)]
+  AdminLocal --> Supabase
 
-  PyRepos --> Supabase
-  AdminRepo --> Supabase
-  TsRepos --> Supabase
-  PyBitrix --> BitrixCRM
-  BitrixOAuth --> BitrixCRM
+  Cron[pg_cron] --> PgNet[pg_net]
+  PgNet --> CommercialFn[Edge Function commercial-sync]
+  PgNet --> MarketingFn[Edge Function marketing-sync]
+  PgNet --> FinancialFn[Edge Function financial-units-sync]
+
+  CommercialFn --> BitrixCRM[Bitrix24 CRM]
+  MarketingFn --> BitrixCRM
+  FinancialFn --> Supabase
+
+  CommercialFn --> Supabase
+  MarketingFn --> Supabase
 ```
 
-## Executavel Principal
-
-```mermaid
-flowchart LR
-  Launcher[PSC.exe / app.start_server] --> FastAPI[FastAPI app]
-  Launcher --> Browser[Navegador local]
-  Browser --> UI[web/]
-  UI --> API[src/adapters/input/api_routes.py]
-  API --> Wiring[src/app/wiring.py]
-  Wiring --> UseCases[src/core/use_cases]
-  UseCases --> Domain[src/core/domain]
-  UseCases --> Ports[src/core/ports]
-  Ports --> SupaRepo[src/adapters/output/supabase_repositories.py]
-  Ports --> TaskGateway[src/adapters/output/bitrix_task_gateway.py]
-  SupaRepo --> Supabase[(Supabase/Postgres)]
-  TaskGateway --> Bitrix[(Bitrix24)]
-  API --> Shutdown[POST /api/system/shutdown]
-```
-
-## Executavel Administrativo Local
-
-```mermaid
-flowchart LR
-  AdminLauncher[PSC-Users-Admin.exe] --> AdminAPI[src/admin/users_app.py]
-  AdminLauncher --> AdminBrowser[Navegador local]
-  AdminBrowser --> AdminUI[admin_web/]
-  AdminUI --> AdminAPI
-  AdminAPI --> Token[SimpleTokenService]
-  AdminAPI --> AdminRepo[AdminUserRepository]
-  AdminRepo --> Supabase[(Supabase/Postgres)]
-  AdminAPI --> AdminShutdown[Shutdown local]
-```
-
-## Fork Web Next.js
+## Fluxo Web Next.js
 
 ```mermaid
 sequenceDiagram
-  participant User as Usuario
-  participant Next as Next.js psc-web
-  participant Bitrix as Bitrix24 OAuth
-  participant Supabase as Supabase/Postgres
+  participant U as Usuario
+  participant N as psc-web
+  participant D as Dominio TS
+  participant S as Supabase
+  participant B as Bitrix24
 
-  User->>Next: GET /login
-  User->>Next: GET /api/auth/bitrix/start
-  Next->>Bitrix: Redirect para autorizacao
-  Bitrix->>Next: GET /api/auth/bitrix/callback?code=...
-  Next->>Bitrix: Troca code por access_token
-  Next->>Bitrix: Busca usuario atual
-  Next->>Supabase: Resolve users.bitrix_user_id + bitrix_portal_domain
-  Next->>User: Cookie httpOnly psc_session
-  User->>Next: Dashboard e APIs
-  Next->>Supabase: Leituras/escritas server-side com validacao de permissao PSC
+  U->>N: Login / Dashboard / Admin
+  N->>S: Le usuarios, areas, indicadores, reports
+  N->>D: Valida papeis, areas e regras
+  N->>B: Autocomplete/Bitrix auth quando aplicavel
+  N->>S: Persiste valores, metas, reports, wins
+  S-->>N: Dados consolidados
+  N-->>U: Dashboard
 ```
 
-## Drill Down Comercial
+## Fluxo De Sync Comercial
 
 ```mermaid
-flowchart TD
-  AdminWeb[Admin web com can_admin_users] --> StartSync[POST /api/commercial-drilldown/sync]
-  StartSync --> RpcStart[start_commercial_sync]
-  RpcStart --> Jobs[(bitrix_sync_jobs)]
-  Edge[Supabase Edge Function commercial-sync] --> Jobs
-  Edge --> CRM[Bitrix24 CRM]
-  Edge --> Deals[(bitrix_crm_deals)]
-  Edge --> Users[(bitrix_crm_users)]
-  Edge --> Stages[(bitrix_crm_stages)]
-  Edge --> History[(bitrix_crm_stage_history)]
-  Edge --> Snapshots[(bitrix_crm_deal_snapshots)]
-  Edge --> Cycles[(bitrix_crm_deal_cycles)]
-  Edge --> Monthly[(commercial_drilldown_monthly)]
-  Edge --> Items[(commercial_drilldown_items)]
-  Dashboard[GET /api/commercial-drilldown] --> RpcDash[get_commercial_drilldown_dashboard]
-  DrillItems[GET /api/commercial-drilldown/items] --> RpcItems[get_commercial_drilldown_items]
-  RpcDash --> Monthly
-  RpcItems --> Items
+sequenceDiagram
+  participant C as pg_cron 08/18
+  participant SQL as Funcoes SQL
+  participant E as commercial-sync
+  participant B as Bitrix24 CRM
+  participant S as Supabase
+
+  C->>SQL: run_commercial_sync_cron()
+  SQL->>S: cria job incremental se nao houver ativo
+  SQL->>E: HTTP POST /functions/v1/commercial-sync
+  E->>S: expira jobs stale somente job_type incremental
+  E->>B: crm.status.list, user.get, crm.item.list, crm.stagehistory.list
+  E->>S: upsert stages, users, deals, history, cycles
+  E->>S: rebuild commercial_drilldown_monthly/items
+  E->>S: job completed ou failed
 ```
 
-## Build e Deploy
+## Fluxo De Sync Marketing
 
 ```mermaid
-flowchart LR
-  Source[Repositorio PSC] --> BuildMain[scripts/build_exe.ps1]
-  Source --> BuildAdmin[scripts/build_admin_exe.ps1]
-  BuildMain --> MainExe[dist/PSC.exe]
-  BuildAdmin --> AdminExe[dist/PSC-Users-Admin.exe]
-  Source --> NextBuild[psc-web npm run build]
-  NextBuild --> Vercel[Vercel/host Next.js]
-  Source --> EdgeDeploy[Supabase function deploy commercial-sync]
-  EdgeDeploy --> SupabaseEdge[Supabase Edge Runtime]
+sequenceDiagram
+  participant C as pg_cron 08:05/18:05
+  participant SQL as Funcoes SQL
+  participant E as marketing-sync
+  participant B as Bitrix24 CRM
+  participant S as Supabase
+
+  C->>SQL: run_marketing_sync_cron()
+  SQL->>S: cria job marketing do mes atual
+  SQL->>E: HTTP POST /functions/v1/marketing-sync
+  E->>B: CRM 95 + CRM 125
+  E->>S: persiste deals/history marketing
+  E->>S: rebuild marketing_drilldown_monthly/items do mes
+  E->>S: job completed
 ```
 
-## Responsabilidades por Modulo
+## Responsabilidades
 
-| Modulo | Responsabilidade | Evidencia |
-|---|---|---|
-| `src/app/start_server.py` | Launcher CLI/executavel, limpeza de porta, abertura de navegador e startup Uvicorn. | `src/app/start_server.py` |
-| `src/app/main.py` | Fabrica FastAPI, registra rotas, serve `web/` e healthcheck. | `src/app/main.py` |
-| `src/app/wiring.py` | Composition root Python. | `src/app/wiring.py` |
-| `src/adapters/input/api_routes.py` | Adapter HTTP Python, auth bearer e traducao de erros. | `src/adapters/input/api_routes.py` |
-| `src/core/` | Modelos, regras, ports e use cases Python. | `src/core/` |
-| `src/adapters/output/` | Persistencia Supabase e gateway Bitrix na versao Python. | `src/adapters/output/` |
-| `src/admin/users_app.py` | FastAPI separado para admin local. | `src/admin/users_app.py` |
-| `web/` | UI estatica do executavel principal. | `web/index.html`, `web/app.js` |
-| `admin_web/` | UI estatica do executavel admin. | `admin_web/index.html`, `admin_web/app.js` |
-| `psc-web/src/app/` | Paginas e rotas Next.js App Router. | `psc-web/src/app/` |
-| `psc-web/src/core/` | Dominio, regras, ports e use cases TypeScript. | `psc-web/src/core/` |
-| `psc-web/src/adapters/output/` | Repositories Supabase e gateway Bitrix TypeScript. | `psc-web/src/adapters/output/` |
-| `psc-web/src/infra/session.ts` | JWT de sessao e cookie HTTP-only. | `psc-web/src/infra/session.ts` |
-| `supabase/functions/commercial-sync/` | Sincronizacao CRM Bitrix e reconstrucao de agregados comerciais. | `supabase/functions/commercial-sync/index.ts` |
+| Componente | Responsabilidade |
+|---|---|
+| `psc-web` | Interface web moderna, APIs server-side, dashboards e administracao. |
+| `src/` Python | App legado/local, dominio core-first, adapters Supabase/Bitrix e executavel. |
+| `supabase/functions/*` | Sincronizacoes fora da Vercel e materializacao de dados. |
+| `sql/` | Schema, migrations, RPCs, views, helpers operacionais e crons. |
+| Supabase | Banco, auth/tabelas, REST, Edge Functions, Vault, pg_cron/pg_net. |
+| Bitrix24 | Origem de CRM, usuarios, tarefas e login/OAuth quando aplicavel. |
 
-## Dependencias Externas
+## Notas De Fronteira
 
-| Dependencia | Uso | Fronteira |
-|---|---|---|
-| Supabase/Postgres | Persistencia operacional, RPCs comerciais, jobs e agregados. | Python repositories, TS repositories, SQL, Edge Function |
-| Bitrix24 OAuth | Login web e identidade do usuario. | `psc-web/src/app/api/auth/bitrix/`, `BitrixGateway` |
-| Bitrix24 Webhook/API | Busca de usuarios, tarefas de planos de acao e dados CRM para Drill Down. | Gateways Python/TS, Edge Function |
-| Vercel/Next hosting | Host esperado para `psc-web`. | `psc-web/README.md`, `next.config.mjs` |
-| PyInstaller/Windows | Empacotamento local one-file. | `scripts/`, `.spec` |
-
-## Notas de Fronteira
-
-- `core/` Python e `psc-web/src/core/` TypeScript concentram regras e contratos, mas nao sao automaticamente sincronizados; mudancas de regra devem ser duplicadas com cuidado.
-- `psc-web` usa Supabase service role em rotas server-side; nao ha evidencia de acesso direto do browser ao Supabase.
-- Drill Down Comercial foi desenhado para que clientes PSC leiam dados pre-calculados no Supabase e nao chamem Bitrix24 CRM diretamente.
-- A Edge Function depende de segredos no ambiente Supabase: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `BITRIX_WEBHOOK_URL` e variaveis comerciais opcionais.
+- Clientes nao devem chamar Bitrix24 diretamente para Drill Downs; consultam dados pre-calculados no Supabase.
+- Jobs de sync devem ser separados por `job_type`: `incremental`, `marketing`, `full` quando aplicavel.
+- `CRM_import` foi tratado como legado instavel; caminho canonico recomendado e `commercial-sync`.
+- `net._http_response` pode registrar timeout mesmo se o job continuar; a tabela `bitrix_sync_jobs` e fonte operacional mais confiavel para resultado da sync.

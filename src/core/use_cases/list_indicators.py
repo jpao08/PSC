@@ -8,9 +8,15 @@ from core.domain.rules import (
     calculate_achievement_percent,
     calculate_annual_value,
     calculate_monthly_value,
+    build_quarter_summary,
     classify_performance,
+    current_quarter_for_year,
     ensure_user_active,
     get_user_area_ids,
+    indicator_type_label,
+    last_closed_quarter_for_year,
+    month_status,
+    quarter_months,
 )
 from core.ports.repositories import IndicatorRepositoryPort
 
@@ -75,6 +81,7 @@ class ListIndicators:
             monthly_values: dict[int, Decimal | None] = {}
             monthly_projections: dict[int, Decimal | None] = {}
             monthly_targets: dict[int, Decimal | None] = {}
+            monthly_statuses: dict[int, str] = {}
             not_applicable: dict[int, bool] = {}
             below_target: dict[int, bool] = {}
             for month in range(1, 13):
@@ -92,6 +99,7 @@ class ListIndicators:
                 )
                 monthly_targets[month] = target_map.get((indicator.id, month))
                 monthly_projections[month] = projection_map.get((indicator.id, month))
+                monthly_statuses[month] = month_status(monthly_values[month], is_not_applicable)
                 below_target[month] = (
                     not is_not_applicable
                     and
@@ -116,6 +124,25 @@ class ListIndicators:
             annual_real = calculate_annual_value(real_values, indicator.aggregation_type)
             annual_projected = calculate_annual_value(projected_values, indicator.aggregation_type)
             achievement = calculate_achievement_percent(annual_projected, annual_target)
+            current_quarter = current_quarter_for_year(year)
+            last_closed_quarter = last_closed_quarter_for_year(year)
+
+            def build_summary(quarter: int, is_closed: bool) -> dict[str, object]:
+                return build_quarter_summary(
+                    quarter=quarter,
+                    aggregation_type=indicator.aggregation_type,
+                    month_values=[
+                        (
+                            month,
+                            monthly_values[month],
+                            monthly_targets[month],
+                            monthly_statuses[month],
+                        )
+                        for month in quarter_months(quarter)
+                    ],
+                    annual_target=annual_target,
+                    is_closed=is_closed,
+                )
 
             rows.append(
                 IndicatorTableRow(
@@ -125,13 +152,16 @@ class ListIndicators:
                     area_name=indicator.area_name,
                     area_hex_color=indicator.area_hex_color,
                     description=indicator.description,
+                    formula=indicator.formula,
                     aggregation_type=indicator.aggregation_type,
+                    indicator_type_label=indicator_type_label(indicator.aggregation_type),
                     unit_id=indicator.unit_id,
                     unit=indicator.unit,
                     maturity_level=indicator.maturity_level,
                     monthly_values=monthly_values,
                     monthly_projections=monthly_projections,
                     monthly_targets=monthly_targets,
+                    monthly_statuses=monthly_statuses,
                     not_applicable=not_applicable,
                     below_target=below_target,
                     annual_target=annual_target,
@@ -142,6 +172,14 @@ class ListIndicators:
                     maturity_classification=classify_performance(indicator.maturity_level),
                     confidence_classification=classify_performance(confidence_level),
                     projected_achievement_classification=classify_performance(achievement),
+                    consolidation={
+                        "last_closed_quarter": (
+                            build_summary(last_closed_quarter, True)
+                            if last_closed_quarter is not None
+                            else None
+                        ),
+                        "current_quarter": build_summary(current_quarter, False),
+                    },
                 )
             )
         rows.sort(

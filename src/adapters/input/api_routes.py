@@ -36,6 +36,7 @@ from core.domain.rules import (
     ensure_can_view_indicator,
     ensure_confidence_level,
     ensure_hex_color_or_none,
+    ensure_indicator_in_user_area,
     ensure_issue_status,
     ensure_required_text,
     ensure_role,
@@ -53,7 +54,7 @@ class WeeklyValuePayload(BaseModel):
     year: int
     month: int = Field(ge=1, le=12)
     week_number: int = Field(ge=1, le=4)
-    value: str
+    value: str | None = None
 
 
 class ActionPlanPayload(BaseModel):
@@ -72,6 +73,7 @@ class CreateIndicatorPayload(BaseModel):
     area_id: str
     name: str
     description: str | None = None
+    formula: str | None = None
     aggregation_type: str
     unit_id: str
     maturity_level: str | None = None
@@ -81,6 +83,7 @@ class UpdateIndicatorPayload(BaseModel):
     area_id: str
     name: str
     description: str | None = None
+    formula: str | None = None
     aggregation_type: str
     unit_id: str
     maturity_level: str | None = None
@@ -166,6 +169,16 @@ def _decimal_to_float(value: Decimal | None) -> float | None:
     if value is None:
         return None
     return float(value)
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 def _parse_decimal(value: str, field_name: str) -> Decimal:
@@ -698,6 +711,7 @@ def create_api_router(container: Container) -> APIRouter:
                     "value": _decimal_to_float(row.monthly_values.get(month)),
                     "projected_value": _decimal_to_float(row.monthly_projections.get(month)),
                     "monthly_target": _decimal_to_float(row.monthly_targets.get(month)),
+                    "status": row.monthly_statuses.get(month),
                     "not_applicable": bool(row.not_applicable.get(month, False)),
                     "below_target": bool(row.below_target.get(month, False)),
                 }
@@ -711,7 +725,9 @@ def create_api_router(container: Container) -> APIRouter:
                     "area_name": row.area_name,
                     "area_hex_color": row.area_hex_color,
                     "description": row.description,
+                    "formula": row.formula,
                     "aggregation_type": row.aggregation_type,
+                    "indicator_type_label": row.indicator_type_label,
                     "unit_id": row.unit_id,
                     "unit": row.unit,
                     "maturity_level": _decimal_to_float(row.maturity_level),
@@ -727,6 +743,7 @@ def create_api_router(container: Container) -> APIRouter:
                     "projected_achievement_classification": (
                         row.projected_achievement_classification
                     ),
+                    "consolidation": _json_safe(row.consolidation),
                     "months": months,
                 }
             )
@@ -979,8 +996,28 @@ def create_api_router(container: Container) -> APIRouter:
         payload: WeeklyValuePayload,
         current_user: User = Depends(get_current_user),
     ) -> dict[str, Any]:
-        numeric_value = _parse_decimal(payload.value, "value")
         try:
+            indicator = container.indicator_repository.get_by_id(indicator_id)
+            if indicator is None:
+                raise NotFoundError("Indicador nao encontrado.")
+            if payload.value is None or not payload.value.strip():
+                ensure_user_active(current_user)
+                ensure_indicator_in_user_area(user=current_user, indicator=indicator)
+                container.indicator_repository.delete_weekly_value(
+                    indicator_id=indicator_id,
+                    year=payload.year,
+                    month=payload.month,
+                    week_number=payload.week_number,
+                )
+                return {
+                    "indicator_id": indicator_id,
+                    "year": payload.year,
+                    "month": payload.month,
+                    "week_number": payload.week_number,
+                    "value": None,
+                    "status": "deleted",
+                }
+            numeric_value = _parse_decimal(payload.value, "value")
             saved = container.register_indicator_value.execute(
                 user=current_user,
                 indicator_id=indicator_id,
@@ -1054,6 +1091,7 @@ def create_api_router(container: Container) -> APIRouter:
                 area_id=payload.area_id,
                 name=payload.name,
                 description=payload.description,
+                formula=payload.formula,
                 aggregation_type=payload.aggregation_type,
                 unit_id=payload.unit_id,
                 maturity_level=(
@@ -1071,6 +1109,7 @@ def create_api_router(container: Container) -> APIRouter:
             "area_name": created.area_name,
             "name": created.name,
             "description": created.description,
+            "formula": created.formula,
             "aggregation_type": created.aggregation_type,
             "unit_id": created.unit_id,
             "unit": created.unit,
@@ -1090,6 +1129,7 @@ def create_api_router(container: Container) -> APIRouter:
                 area_id=payload.area_id,
                 name=payload.name,
                 description=payload.description,
+                formula=payload.formula,
                 aggregation_type=payload.aggregation_type,
                 unit_id=payload.unit_id,
                 maturity_level=(
@@ -1107,6 +1147,7 @@ def create_api_router(container: Container) -> APIRouter:
             "area_name": updated.area_name,
             "name": updated.name,
             "description": updated.description,
+            "formula": updated.formula,
             "aggregation_type": updated.aggregation_type,
             "unit_id": updated.unit_id,
             "unit": updated.unit,

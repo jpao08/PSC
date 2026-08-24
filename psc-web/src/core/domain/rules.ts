@@ -3,8 +3,11 @@ import {
   AuthenticationError,
   AuthorizationError,
   Indicator,
+  IndicatorTypeLabel,
+  MonthStatus,
   IssueStatus,
   PerformanceClassification,
+  QuarterSummary,
   Role,
   User,
   ValidationError
@@ -182,26 +185,24 @@ export function getRangeDaysCount(year: number, month: number, weekNumber: numbe
   return found[2] - found[1] + 1;
 }
 
+export function getIndicatorTypeLabel(aggregationType: AggregationType): IndicatorTypeLabel {
+  if (aggregationType === "sum") return "Fluxo";
+  if (aggregationType === "latest") return "Posicao";
+  return "Proporcional";
+}
+
+export function resolveMonthlySnapshot(values: Array<{ weekNumber: number; value: number }>): number | null {
+  if (values.length === 0) return null;
+  return [...values].sort((left, right) => right.weekNumber - left.weekNumber)[0]?.value ?? null;
+}
+
 export function calculateMonthlyValue(
   values: Array<{ weekNumber: number; value: number }>,
-  aggregationType: AggregationType,
-  year: number,
-  month: number
+  _aggregationType: AggregationType,
+  _year: number,
+  _month: number
 ): number | null {
-  if (values.length === 0) return null;
-  if (aggregationType === "sum") return values.reduce((total, item) => total + item.value, 0);
-  if (aggregationType === "latest") {
-    return [...values].sort((left, right) => right.weekNumber - left.weekNumber)[0]?.value ?? null;
-  }
-
-  let weightedTotal = 0;
-  let totalDays = 0;
-  for (const item of values) {
-    const days = getRangeDaysCount(year, month, item.weekNumber);
-    weightedTotal += item.value * days;
-    totalDays += days;
-  }
-  return totalDays === 0 ? null : weightedTotal / totalDays;
+  return resolveMonthlySnapshot(values);
 }
 
 export function validateConfidenceLevel(value: number | null): number | null {
@@ -236,4 +237,92 @@ export function calculateAnnualValue(
     return [...values].sort((left, right) => right.month - left.month)[0]?.value ?? null;
   }
   return values.reduce((total, item) => total + item.value, 0) / values.length;
+}
+
+export function calculatePeriodValue(
+  values: Array<{ month: number; value: number }>,
+  aggregationType: AggregationType
+): number | null {
+  return calculateAnnualValue(values, aggregationType);
+}
+
+export function getQuarterMonths(quarter: 1 | 2 | 3 | 4): number[] {
+  const start = (quarter - 1) * 3 + 1;
+  return [start, start + 1, start + 2];
+}
+
+export function getQuarterForMonth(month: number): 1 | 2 | 3 | 4 {
+  ensureMonth(month);
+  return Math.ceil(month / 3) as 1 | 2 | 3 | 4;
+}
+
+export function getCurrentQuarterForYear(year: number, today = new Date()): 1 | 2 | 3 | 4 {
+  const currentYear = today.getFullYear();
+  if (year < currentYear) return 4;
+  if (year > currentYear) return 1;
+  return getQuarterForMonth(today.getMonth() + 1);
+}
+
+export function getLastClosedQuarterForYear(year: number, today = new Date()): 1 | 2 | 3 | 4 | null {
+  const currentYear = today.getFullYear();
+  if (year < currentYear) return 4;
+  if (year > currentYear) return null;
+  const currentQuarter = getQuarterForMonth(today.getMonth() + 1);
+  return currentQuarter === 1 ? null : ((currentQuarter - 1) as 1 | 2 | 3 | 4);
+}
+
+function monthNamesForObservation(monthNumbers: number[]): string {
+  const names = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+  return monthNumbers.map((month) => names[month - 1]).join(", ");
+}
+
+export function resolveMonthStatus(value: number | null, notApplicable: boolean): MonthStatus {
+  if (notApplicable) return "not_calculable";
+  if (value != null) return "filled";
+  return "pending";
+}
+
+export function buildQuarterSummary(input: {
+  quarter: 1 | 2 | 3 | 4;
+  aggregationType: AggregationType;
+  monthValues: Array<{ month: number; value: number | null; target: number | null; status: MonthStatus }>;
+  annualTarget: number | null;
+  isClosed: boolean;
+}): QuarterSummary {
+  const months = getQuarterMonths(input.quarter);
+  const notCalculableMonths = input.monthValues.filter((item) => item.status === "not_calculable").map((item) => item.month);
+  const pendingMonths = input.monthValues.filter((item) => item.status === "pending").map((item) => item.month);
+  const filledValues = input.monthValues
+    .filter((item) => item.status === "filled" && item.value != null)
+    .map((item) => ({ month: item.month, value: item.value as number }));
+  const targetValues = input.monthValues
+    .filter((item) => item.status !== "not_calculable" && item.target != null)
+    .map((item) => ({ month: item.month, value: item.target as number }));
+  const expectedCount = months.length - notCalculableMonths.length;
+  const filledCount = filledValues.length;
+  const completenessPercent = expectedCount === 0 ? null : (filledCount / expectedCount) * 100;
+  const value = calculatePeriodValue(filledValues, input.aggregationType);
+  const target = calculatePeriodValue(targetValues, input.aggregationType);
+  const parts = [`Completude: ${completenessPercent == null ? "N/A" : `${Math.round(completenessPercent)}%`}`];
+  if (notCalculableMonths.length > 0) parts.push(`Nao Calculavel: ${monthNamesForObservation(notCalculableMonths)}`);
+  if (pendingMonths.length > 0) parts.push(`Pendente: ${monthNamesForObservation(pendingMonths)}`);
+  if (pendingMonths.length === 0 && notCalculableMonths.length === 0) parts.push("Nenhuma pendencia identificada");
+  const availability = `Consolidado calculado com ${filledCount} de ${expectedCount} meses disponiveis.`;
+
+  return {
+    quarter: input.quarter,
+    label: `T${input.quarter}`,
+    months,
+    value,
+    target,
+    annualTarget: input.annualTarget,
+    completenessPercent,
+    filledCount,
+    expectedCount,
+    notCalculableMonths,
+    pendingMonths,
+    analysis: availability,
+    observation: parts.join(" | "),
+    isClosed: input.isClosed
+  };
 }

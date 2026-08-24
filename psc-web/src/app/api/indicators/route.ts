@@ -36,6 +36,7 @@ export async function POST(request: Request) {
       areaId: ensureRequiredText(String(payload.areaId ?? payload.area_id ?? ""), "area"),
       name: ensureRequiredText(String(payload.name ?? ""), "nome do indicador"),
       description: String(payload.description ?? "").trim() || null,
+      formula: String(payload.formula ?? "").trim() || null,
       aggregationType,
       unitId: ensureRequiredText(String(payload.unitId ?? payload.unit_id ?? ""), "unidade"),
       maturityLevel: parseMaturityLevel(payload.maturityLevel ?? payload.maturity_level),

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   calculateAchievementPercent,
   calculateAnnualValue,
+  buildQuarterSummary,
   calculateMonthlyValue,
   classifyPerformance,
   ensureCanEditIndicatorMaturity,
@@ -9,6 +10,7 @@ import {
   ensureCanUseCommercialDrilldown,
   ensureCanViewFinancialDrilldown,
   ensureCanViewIndicator,
+  resolveMonthStatus,
   validateConfidenceLevel
 } from "../src/core/domain/rules";
 import { AuthorizationError, Indicator, User, ValidationError } from "../src/core/domain/models";
@@ -40,6 +42,7 @@ const indicator: Indicator = {
   areaHexColor: "#0b6bcb",
   name: "Indicador",
   description: null,
+  formula: null,
   aggregationType: "avg",
   unitId: null,
   unit: null,
@@ -48,15 +51,43 @@ const indicator: Indicator = {
 };
 
 describe("rules", () => {
-  it("calculates sum, latest and weighted average monthly values", () => {
+  it("resolves monthly value as the latest cumulative weekly value", () => {
     const values = [
-      { weekNumber: 1, value: 10 },
-      { weekNumber: 2, value: 20 },
-      { weekNumber: 4, value: 40 }
+      { weekNumber: 1, value: 100 },
+      { weekNumber: 2, value: 150 },
+      { weekNumber: 3, value: 200 },
+      { weekNumber: 4, value: 250 }
     ];
-    expect(calculateMonthlyValue(values, "sum", 2026, 2)).toBe(70);
-    expect(calculateMonthlyValue(values, "latest", 2026, 2)).toBe(40);
-    expect(calculateMonthlyValue(values, "avg", 2026, 2)).toBeCloseTo(23.3333333333);
+    expect(calculateMonthlyValue(values, "sum", 2026, 2)).toBe(250);
+    expect(calculateMonthlyValue(values, "latest", 2026, 2)).toBe(250);
+    expect(calculateMonthlyValue(values, "avg", 2026, 2)).toBe(250);
+  });
+
+  it("consolidates quarters and completeness by indicator type", () => {
+    const baseMonths = [
+      { month: 1, value: 100, target: 100, status: resolveMonthStatus(100, false) },
+      { month: 2, value: 150, target: 150, status: resolveMonthStatus(150, false) },
+      { month: 3, value: 200, target: 200, status: resolveMonthStatus(200, false) }
+    ];
+    expect(buildQuarterSummary({ quarter: 1, aggregationType: "sum", monthValues: baseMonths, annualTarget: 1000, isClosed: true }).value).toBe(450);
+    expect(buildQuarterSummary({ quarter: 1, aggregationType: "latest", monthValues: baseMonths, annualTarget: 1000, isClosed: true }).value).toBe(200);
+    expect(buildQuarterSummary({ quarter: 1, aggregationType: "avg", monthValues: baseMonths, annualTarget: 1000, isClosed: true }).value).toBe(150);
+
+    const incomplete = buildQuarterSummary({
+      quarter: 1,
+      aggregationType: "sum",
+      annualTarget: null,
+      isClosed: false,
+      monthValues: [
+        { month: 1, value: 0, target: null, status: resolveMonthStatus(0, false) },
+        { month: 2, value: null, target: null, status: resolveMonthStatus(null, true) },
+        { month: 3, value: null, target: null, status: resolveMonthStatus(null, false) }
+      ]
+    });
+    expect(incomplete.value).toBe(0);
+    expect(incomplete.filledCount).toBe(1);
+    expect(incomplete.expectedCount).toBe(2);
+    expect(incomplete.completenessPercent).toBe(50);
   });
 
   it("allows managers to view indicators from their areas", () => {

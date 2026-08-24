@@ -5,6 +5,8 @@ export type Role =
   | "executivo"
   | "executivo_visualizacao";
 export type AggregationType = "sum" | "avg" | "latest";
+export type IndicatorTypeLabel = "Fluxo" | "Posicao" | "Proporcional";
+export type MonthStatus = "filled" | "pending" | "not_calculable";
 export type IssueStatus =
   | "Concluido"
   | "Concluído"
@@ -68,6 +70,7 @@ export type Indicator = {
   areaHexColor: string | null;
   name: string;
   description: string | null;
+  formula?: string | null;
   aggregationType: AggregationType;
   unitId: string | null;
   unit: string | null;
@@ -91,7 +94,9 @@ export type IndicatorTableRow = {
   areaName: string | null;
   areaHexColor: string | null;
   description: string | null;
+  formula?: string | null;
   aggregationType: AggregationType;
+  indicatorTypeLabel: IndicatorTypeLabel;
   unitId: string | null;
   unit: string | null;
   maturityLevel: number | null;
@@ -103,6 +108,10 @@ export type IndicatorTableRow = {
   maturityClassification: PerformanceClassification;
   confidenceClassification: PerformanceClassification;
   projectedAchievementClassification: PerformanceClassification;
+  consolidation: {
+    lastClosedQuarter: QuarterSummary | null;
+    currentQuarter: QuarterSummary | null;
+  };
   months: Array<{
     month: number;
     value: number | null;
@@ -111,9 +120,27 @@ export type IndicatorTableRow = {
     marketingDrilldownValue: number | null;
     projectedValue: number | null;
     monthlyTarget: number | null;
+    status: MonthStatus;
     notApplicable: boolean;
     belowTarget: boolean;
   }>;
+};
+
+export type QuarterSummary = {
+  quarter: 1 | 2 | 3 | 4;
+  label: string;
+  months: number[];
+  value: number | null;
+  target: number | null;
+  annualTarget: number | null;
+  completenessPercent: number | null;
+  filledCount: number;
+  expectedCount: number;
+  notCalculableMonths: number[];
+  pendingMonths: number[];
+  analysis: string;
+  observation: string;
+  isClosed: boolean;
 };
 
 export type PerformanceClassification =

@@ -57,6 +57,7 @@ export interface IndicatorRepositoryPort {
     areaId: string;
     name: string;
     description: string | null;
+    formula: string | null;
     aggregationType: AggregationType;
     unitId: string;
     maturityLevel: number | null;
@@ -66,6 +67,7 @@ export interface IndicatorRepositoryPort {
     areaId: string;
     name: string;
     description: string | null;
+    formula: string | null;
     aggregationType: AggregationType;
     unitId: string;
     maturityLevel: number | null;
@@ -74,6 +76,7 @@ export interface IndicatorRepositoryPort {
   deleteIndicatorWithHistory(indicatorId: string): Promise<void>;
   listWeeklyValues(indicatorIds: string[], year: number, month?: number): Promise<IndicatorValue[]>;
   upsertWeeklyValue(value: IndicatorValue): Promise<void>;
+  deleteWeeklyValue(indicatorId: string, year: number, month: number, weekNumber: number): Promise<void>;
   deleteWeeklyValuesForMonth(indicatorId: string, year: number, month: number): Promise<void>;
   listMonthTargets(indicatorIds: string[], year: number): Promise<Array<{ indicatorId: string; month: number; targetValue: number }>>;
   listMonthProjections(indicatorIds: string[], year: number): Promise<Array<{ indicatorId: string; month: number; projectedValue: number }>>;
