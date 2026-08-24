@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type { CSSProperties, FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -7,10 +7,22 @@ import {
   AggregationType,
   Area,
   BitrixUser,
+  CommercialDrilldownDashboard,
+  CommercialDrilldownItem,
+  CommercialDrilldownItemsPage,
+  CommercialDrilldownMetric,
+  CommercialDrilldownRow,
+  FinancialDrilldownDashboard,
+  FinancialDrilldownRow,
   IndicatorTableRow,
   IndicatorUnit,
   IssueReport,
   IssueTag,
+  MarketingDrilldownDashboard,
+  MarketingDrilldownItem,
+  MarketingDrilldownItemsPage,
+  MarketingDrilldownMetric,
+  MarketingDrilldownRow,
   User,
   WinReport,
   WinTag
@@ -19,6 +31,11 @@ import { api } from "./api";
 
 const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const issueStatuses = ["Nao Iniciada", "Em Planejamento", "Em atendimento", "Delegada", "Recusada", "Concluido"];
+const issuePlaceholders = {
+  ocorrencia: "Descricao da ocorrencia encontrada (anomalia).",
+  identificacaoCausa: "Dissertacao explicando qual foi a causa da ocorrencia encontrada.",
+  propostaSolucao: "Lista de atividades, datas limite e responsaveis para resolver a ocorrencia de forma definitiva ou paliativa."
+};
 const gutOptions = [
   ["1", "1 - Baixo"],
   ["2", "2 - Moderado"],
@@ -59,7 +76,24 @@ type IssueTagFormState = {
 };
 
 type IssueSortMode = "executive" | "requester" | "date";
-type ReportTab = "indicators" | "issues" | "wins";
+type ReportTab = "indicators" | "consolidation" | "commercial" | "financial" | "marketing" | "issues" | "wins";
+type DrilldownViewMode = "indicator" | "transposed" | "consolidated";
+
+type CommercialDrilldownSelection = {
+  metric: CommercialDrilldownMetric;
+  row: CommercialDrilldownRow;
+  month: number | null;
+  page: number;
+  query: string;
+};
+
+type MarketingDrilldownSelection = {
+  metric: MarketingDrilldownMetric;
+  row: MarketingDrilldownRow;
+  month: number;
+  page: number;
+  query: string;
+};
 
 type ActionPlanFormState = {
   title: string;
@@ -78,6 +112,7 @@ type IndicatorFormState = {
   areaId: string;
   name: string;
   description: string;
+  formula: string;
   aggregationType: AggregationType;
   unitId: string;
   maturityLevel: string;
@@ -136,6 +171,7 @@ const emptyIndicatorForm: IndicatorFormState = {
   areaId: "",
   name: "",
   description: "",
+  formula: "",
   aggregationType: "sum",
   unitId: "",
   maturityLevel: ""
@@ -151,6 +187,36 @@ const emptyAreaForm: AreaFormState = {
 function formatNumber(value: number | null): string {
   if (value == null || Number.isNaN(value)) return "-";
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value);
+}
+
+function aggregationLabel(value: AggregationType): string {
+  if (value === "sum") return "Fluxo";
+  if (value === "latest") return "Posicao";
+  return "Proporcional";
+}
+
+function monthStatusLabel(value: string): string {
+  if (value === "not_calculable") return "N/A";
+  if (value === "filled") return "Preenchido";
+  return "Pendente";
+}
+
+function formatCommercialValue(value: number | null, unit: "quantity" | "money"): string {
+  if (value == null || Number.isNaN(value)) return "-";
+  if (unit === "money") {
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+      maximumFractionDigits: 2
+    }).format(value);
+  }
+  return new Intl.NumberFormat("pt-BR", {
+    maximumFractionDigits: Number.isInteger(value) ? 0 : 2
+  }).format(value);
+}
+
+function hasCommercialValue(value: number | null | undefined): boolean {
+  return value != null && !Number.isNaN(value) && value !== 0;
 }
 
 const performanceLabels: Record<string, string> = {
@@ -199,10 +265,45 @@ function priorityPreview(gravity: string, urgency: string, tendency: string): st
   return String(values[0] * values[1] * values[2]);
 }
 
+function csvCell(value: string | number | null | undefined): string {
+  const text = value == null ? "" : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function toCsv(rows: Array<Array<string | number | null | undefined>>): string {
+  return rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
+}
+
+function downloadCsv(filename: string, rows: Array<Array<string | number | null | undefined>>): void {
+  const blob = new Blob([`\uFEFF${toCsv(rows)}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportDateStamp(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export default function DashboardClient({ initialUser }: { initialUser: User }) {
   const [user] = useState(initialUser);
   const [year, setYear] = useState(new Date().getFullYear());
   const [indicators, setIndicators] = useState<IndicatorTableRow[]>([]);
+  const [commercialDashboard, setCommercialDashboard] = useState<CommercialDrilldownDashboard | null>(null);
+  const [commercialSelection, setCommercialSelection] = useState<CommercialDrilldownSelection | null>(null);
+  const [commercialItems, setCommercialItems] = useState<CommercialDrilldownItemsPage | null>(null);
+  const [commercialLoading, setCommercialLoading] = useState(false);
+  const [financialDashboard, setFinancialDashboard] = useState<FinancialDrilldownDashboard | null>(null);
+  const [financialLoading, setFinancialLoading] = useState(false);
+  const [marketingDashboard, setMarketingDashboard] = useState<MarketingDrilldownDashboard | null>(null);
+  const [marketingSelection, setMarketingSelection] = useState<MarketingDrilldownSelection | null>(null);
+  const [marketingItems, setMarketingItems] = useState<MarketingDrilldownItemsPage | null>(null);
+  const [marketingLoading, setMarketingLoading] = useState(false);
   const [issues, setIssues] = useState<IssueReport[]>([]);
   const [issueTags, setIssueTags] = useState<IssueTag[]>([]);
   const [wins, setWins] = useState<WinReport[]>([]);
@@ -210,6 +311,9 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
   const [areas, setAreas] = useState<Area[]>([]);
   const [indicatorUnits, setIndicatorUnits] = useState<IndicatorUnit[]>([]);
   const [activeTab, setActiveTab] = useState<ReportTab>("indicators");
+  const [commercialViewMode, setCommercialViewMode] = useState<DrilldownViewMode>("indicator");
+  const [financialViewMode, setFinancialViewMode] = useState<DrilldownViewMode>("indicator");
+  const [marketingViewMode, setMarketingViewMode] = useState<DrilldownViewMode>("indicator");
   const [search, setSearch] = useState("");
   const [indicatorAreaFilter, setIndicatorAreaFilter] = useState<string[]>([]);
   const [issueSearch, setIssueSearch] = useState("");
@@ -269,6 +373,10 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
     values: Record<number, string>;
     projectedValue: string;
     notApplicable: boolean;
+    valueMode: "manual" | "financial_drilldown" | "marketing_drilldown";
+    valueSource: "manual" | "financial_drilldown" | "marketing_drilldown" | "empty" | "not_applicable";
+    financialDrilldownValue: number | null;
+    marketingDrilldownValue: number | null;
   } | null>(null);
   const [monthlyPlanning, setMonthlyPlanning] = useState<{
     row: IndicatorTableRow;
@@ -281,6 +389,10 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
   const isExecutive = user.role === "executivo";
   const canEditMaturity = isExecutive || user.canEditIndicatorMaturity;
   const canAdmin = user.role === "executivo" || user.canAdminUsers;
+  const canUseCommercial = isExecutive || user.canViewCommercialDrilldown;
+  const canUseFinancial = isExecutive || user.canViewFinancialDrilldown || user.canEditFinancialDrilldown;
+  const canEditFinancial = isExecutive || user.canEditFinancialDrilldown;
+  const canUseMarketing = isExecutive || user.canViewMarketingDrilldown;
   const currentMonth = year === new Date().getFullYear() ? new Date().getMonth() + 1 : null;
 
   const filteredIndicators = useMemo(() => {
@@ -370,6 +482,82 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
     }
   }, [year]);
 
+  const loadCommercialDashboard = useCallback(async () => {
+    if (!canUseCommercial) return;
+    setCommercialLoading(true);
+    try {
+      setCommercialDashboard(await api<CommercialDrilldownDashboard>(`/api/commercial-drilldown?year=${year}`));
+      setStatus("Drill Down Comercial carregado.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao carregar Drill Down Comercial.");
+    } finally {
+      setCommercialLoading(false);
+    }
+  }, [canUseCommercial, year]);
+
+  const loadFinancialDashboard = useCallback(async () => {
+    if (!canUseFinancial) return;
+    setFinancialLoading(true);
+    try {
+      setFinancialDashboard(await api<FinancialDrilldownDashboard>(`/api/financial-drilldown?year=${year}`));
+      setStatus("Drill Down Financeiro carregado.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao carregar Drill Down Financeiro.");
+    } finally {
+      setFinancialLoading(false);
+    }
+  }, [canUseFinancial, year]);
+
+  const loadMarketingDashboard = useCallback(async () => {
+    if (!canUseMarketing) return;
+    setMarketingLoading(true);
+    try {
+      setMarketingDashboard(await api<MarketingDrilldownDashboard>(`/api/marketing-drilldown?year=${year}`));
+      setStatus("Drill Down Marketing carregado.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao carregar Drill Down Marketing.");
+    } finally {
+      setMarketingLoading(false);
+    }
+  }, [canUseMarketing, year]);
+
+  const loadMarketingItems = useCallback(async (selection: MarketingDrilldownSelection) => {
+    const params = new URLSearchParams({
+      year: String(year),
+      metricKey: selection.metric.metricKey,
+      month: String(selection.month),
+      page: String(selection.page),
+      pageSize: "25",
+      sort: "date_desc"
+    });
+    if (!selection.row.isTotal) params.set("channel", selection.row.channel);
+    if (selection.query.trim()) params.set("q", selection.query.trim());
+    try {
+      setMarketingItems(await api<MarketingDrilldownItemsPage>(`/api/marketing-drilldown/items?${params.toString()}`));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao carregar cards de Marketing.");
+    }
+  }, [year]);
+
+  const loadCommercialItems = useCallback(async (selection: CommercialDrilldownSelection) => {
+    const params = new URLSearchParams({
+      year: String(year),
+      metricKey: selection.metric.metricKey,
+      page: String(selection.page),
+      pageSize: "25",
+      sort: "date_desc"
+    });
+    if (selection.month) params.set("month", String(selection.month));
+    if (!selection.month) params.set("month", "1");
+    if (!selection.row.isTotal) params.set("responsibleId", selection.row.responsibleId ?? "__none__");
+    if (selection.query.trim()) params.set("q", selection.query.trim());
+    try {
+      setCommercialItems(await api<CommercialDrilldownItemsPage>(`/api/commercial-drilldown/items?${params.toString()}`));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao carregar cards do Drill Down.");
+    }
+  }, [year]);
+
   const loadIssues = useCallback(async () => {
     if (!canUseIssues) return;
     try {
@@ -429,7 +617,103 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
   useEffect(() => {
     if (activeTab === "issues") loadIssues();
     if (activeTab === "wins") loadWins();
-  }, [activeTab, loadIssues, loadWins]);
+    if (activeTab === "commercial") loadCommercialDashboard();
+    if (activeTab === "financial") loadFinancialDashboard();
+    if (activeTab === "marketing") loadMarketingDashboard();
+  }, [activeTab, loadCommercialDashboard, loadFinancialDashboard, loadIssues, loadMarketingDashboard, loadWins]);
+
+  useEffect(() => {
+    if (commercialSelection) loadCommercialItems(commercialSelection);
+  }, [commercialSelection, loadCommercialItems]);
+
+  useEffect(() => {
+    if (marketingSelection) loadMarketingItems(marketingSelection);
+  }, [marketingSelection, loadMarketingItems]);
+
+  function openCommercialDrilldown(metric: CommercialDrilldownMetric, row: CommercialDrilldownRow, month: number): void {
+    const value = row.months[String(month)];
+    if (!hasCommercialValue(value)) return;
+    setCommercialItems(null);
+    setCommercialSelection({ metric, row, month, page: 1, query: "" });
+  }
+
+  async function startCommercialSync(): Promise<void> {
+    try {
+      const result = await api<{ message: string }>("/api/commercial-drilldown/sync", {
+        method: "POST",
+        body: "{}"
+      });
+      setStatus(result.message || "Sincronizacao comercial solicitada.");
+      await loadCommercialDashboard();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao iniciar sincronizacao comercial.");
+    }
+  }
+
+  function formatMarketingValue(value: number | null, unit: "quantity" | "percentage"): string {
+    if (value == null || Number.isNaN(value)) return "-";
+    if (unit === "percentage") return `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
+    return value.toLocaleString("pt-BR", { maximumFractionDigits: Number.isInteger(value) ? 0 : 2 });
+  }
+
+  function openMarketingDrilldown(metric: MarketingDrilldownMetric, row: MarketingDrilldownRow, month: number): void {
+    const value = row.months[String(month)];
+    if (value == null) return;
+    setMarketingItems(null);
+    setMarketingSelection({ metric, row, month, page: 1, query: "" });
+  }
+
+  async function startMarketingSync(): Promise<void> {
+    try {
+      const result = await api<{ message: string }>("/api/marketing-drilldown/sync", {
+        method: "POST",
+        body: "{}"
+      });
+      setStatus(result.message || "Sincronizacao de Marketing solicitada.");
+      await loadMarketingDashboard();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao iniciar sincronizacao de Marketing.");
+    }
+  }
+
+  function formatFinancialValue(value: number | null, valueType: string): string {
+    if (value === null || value === undefined) return "-";
+    if (valueType === "money") return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    if (valueType === "percentage") return `${value.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
+    return value.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+  }
+
+  async function saveFinancialValue(indicatorId: string, row: FinancialDrilldownRow, month: number): Promise<void> {
+    if (!row.unitId || !canEditFinancial) return;
+    const currentValue = row.months[String(month)];
+    const typedValue = window.prompt(
+      `${row.unitName} - ${months[month - 1]}/${year}`,
+      currentValue === null || currentValue === undefined ? "" : String(currentValue)
+    );
+    if (typedValue === null) return;
+    const normalized = typedValue.trim().replace(",", ".");
+    const value = normalized === "" ? null : Number(normalized);
+    if (normalized !== "" && Number.isNaN(value)) {
+      setStatus("Informe um numero valido para o valor financeiro.");
+      return;
+    }
+    try {
+      await api<{ status: string }>("/api/financial-drilldown/values", {
+        method: "POST",
+        body: JSON.stringify({
+          financialIndicatorId: indicatorId,
+          unitId: row.unitId,
+          year,
+          month,
+          value
+        })
+      });
+      setStatus("Valor financeiro salvo.");
+      await loadFinancialDashboard();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Falha ao salvar valor financeiro.");
+    }
+  }
 
   async function logout() {
     await api("/api/logout", { method: "POST", body: "{}" });
@@ -455,6 +739,14 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
         payload,
         projectedValue: String(row.months.find((item) => item.month === month)?.projectedValue ?? ""),
         notApplicable: Boolean(row.months.find((item) => item.month === month)?.notApplicable),
+        valueMode: row.months.find((item) => item.month === month)?.valueSource === "financial_drilldown"
+          ? "financial_drilldown"
+          : row.months.find((item) => item.month === month)?.valueSource === "marketing_drilldown"
+            ? "marketing_drilldown"
+            : "manual",
+        valueSource: row.months.find((item) => item.month === month)?.valueSource ?? "empty",
+        financialDrilldownValue: row.months.find((item) => item.month === month)?.financialDrilldownValue ?? null,
+        marketingDrilldownValue: row.months.find((item) => item.month === month)?.marketingDrilldownValue ?? null,
         values: Object.fromEntries(payload.weeks.map((week) => [week.weekNumber, week.value == null ? "" : String(week.value)]))
       });
       setStatus(`Editando ${row.indicatorName} em ${months[month - 1]}/${year}.`);
@@ -488,21 +780,22 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
     if (!weeklyEditor) return;
     try {
       const entries = Object.entries(weeklyEditor.values)
-        .map(([weekNumber, value]) => ({ weekNumber: Number(weekNumber), value: value.trim() }))
-        .filter((entry) => entry.value !== "");
+        .map(([weekNumber, value]) => ({ weekNumber: Number(weekNumber), value: value.trim() }));
 
       await Promise.all(
-        entries.map((entry) =>
-          api(`/api/indicators/${weeklyEditor.row.indicatorId}/weekly-values`, {
-            method: "POST",
-            body: JSON.stringify({
-              year,
-              month: weeklyEditor.month,
-              weekNumber: entry.weekNumber,
-              value: entry.value
-            })
-          })
-        )
+        weeklyEditor.valueMode === "manual"
+          ? entries.map((entry) =>
+              api(`/api/indicators/${weeklyEditor.row.indicatorId}/weekly-values`, {
+                method: "POST",
+                body: JSON.stringify({
+                  year,
+                  month: weeklyEditor.month,
+                  weekNumber: entry.weekNumber,
+                  value: entry.value
+                })
+              })
+            )
+          : []
       );
 
       if (user.canEditProjectedValue) {
@@ -521,7 +814,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
         body: JSON.stringify({
           year,
           month: weeklyEditor.month,
-          notApplicable: weeklyEditor.notApplicable
+          notApplicable: weeklyEditor.valueMode === "financial_drilldown" || weeklyEditor.valueMode === "marketing_drilldown" ? false : weeklyEditor.notApplicable
         })
       });
 
@@ -849,6 +1142,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
       areaId: row.areaId,
       name: row.indicatorName,
       description: row.description ?? "",
+      formula: row.formula ?? "",
       aggregationType: row.aggregationType,
       unitId: row.unitId ?? indicatorUnits[0]?.id ?? "",
       maturityLevel: row.maturityLevel == null ? "" : String(row.maturityLevel)
@@ -891,6 +1185,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
           areaId: indicatorForm.areaId,
           name: indicatorForm.name,
           description: indicatorForm.description,
+          formula: indicatorForm.formula,
           aggregationType: indicatorForm.aggregationType,
           unitId: indicatorForm.unitId,
           maturityLevel: indicatorForm.maturityLevel
@@ -1023,6 +1318,292 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
     }
   }
 
+  function exportIndicatorsCsv() {
+    if (!isExecutive) return;
+    const rows: Array<Array<string | number | null | undefined>> = [
+      [
+        "Indicador",
+        "Area",
+        "Unidade",
+        "Maturidade",
+        "Real Anual",
+        "Projetado Anual",
+        "Meta Anual",
+        "Confianca",
+        ...months.flatMap((month) => [`${month} Real`, `${month} Projetado`, `${month} Meta`, `${month} N/A`])
+      ],
+      ...filteredIndicators.map((row) => [
+        row.indicatorName,
+        row.areaName ?? row.areaId,
+        row.unit,
+        row.maturityLevel,
+        row.annualReal,
+        row.annualProjected,
+        row.annualTarget,
+        row.confidenceLevel,
+        ...row.months.flatMap((month) => [
+          month.value,
+          month.projectedValue,
+          month.monthlyTarget,
+          month.notApplicable ? "Sim" : "Nao"
+        ])
+      ])
+    ];
+    downloadCsv(`psc-indicadores-${year}-${exportDateStamp()}.csv`, rows);
+    setStatus("Exportacao de indicadores gerada.");
+  }
+
+  function exportIssuesCsv() {
+    if (!isExecutive) return;
+    const rows: Array<Array<string | number | null | undefined>> = [
+      [
+        "Titulo",
+        "Solicitante",
+        "Area",
+        "Tags",
+        "Gravidade Solicitante",
+        "Urgencia Solicitante",
+        "Tendencia Solicitante",
+        "Prioridade Solicitante",
+        "Gravidade Executiva",
+        "Urgencia Executiva",
+        "Tendencia Executiva",
+        "Prioridade Executiva",
+        "Status",
+        "Data",
+        "Ocorrencia",
+        "Identificacao da causa",
+        "Proposta de Solucao"
+      ],
+      ...filteredIssues.map((issue) => [
+        issue.title,
+        issue.requesterName ?? issue.requesterId,
+        issueAreaLabel(issue),
+        issue.tags.map((tag) => tag.name).join("; "),
+        issue.requesterGravity,
+        issue.requesterUrgency,
+        issue.requesterTendency,
+        issue.requesterPriorityScore,
+        issue.executiveGravity,
+        issue.executiveUrgency,
+        issue.executiveTendency,
+        issue.executivePriorityScore,
+        formatStatus(issue.status),
+        new Date(issue.createdAt).toLocaleDateString("pt-BR"),
+        issue.ocorrencia,
+        issue.identificacaoCausa,
+        issue.propostaSolucao
+      ])
+    ];
+    downloadCsv(`psc-issues-${exportDateStamp()}.csv`, rows);
+    setStatus("Exportacao de Issues gerada.");
+  }
+
+  function renderDrilldownModeButtons(mode: DrilldownViewMode, setMode: (mode: DrilldownViewMode) => void) {
+    return (
+      <div className="toolbar-actions filters-row">
+        <button type="button" className={mode === "indicator" ? "tab-btn active" : "tab-btn"} onClick={() => setMode("indicator")}>Por Indicador</button>
+        <button type="button" className={mode === "transposed" ? "tab-btn active" : "tab-btn"} onClick={() => setMode("transposed")}>Transposto</button>
+        <button type="button" className={mode === "consolidated" ? "tab-btn active" : "tab-btn"} onClick={() => setMode("consolidated")}>Consolidado</button>
+      </div>
+    );
+  }
+
+  function renderCommercialTransposed() {
+    const responsibles = commercialDashboard?.responsibles ?? [];
+    return responsibles.map((responsible) => (
+      <section className="commercial-metric" key={`commercial-transposed-${responsible.responsibleId ?? "none"}`}>
+        <div className="toolbar commercial-metric-title">
+          <h3>{responsible.responsibleName}</h3>
+          {!responsible.active ? <span className="inactive-badge">Inativo</span> : null}
+        </div>
+        <div className="table-wrap commercial-table-wrap">
+          <table className="commercial-table">
+            <thead>
+              <tr>
+                <th className="commercial-responsible-col">Indicador</th>
+                {months.map((month) => <th key={month}>{month}</th>)}
+                <th>Consolidado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(commercialDashboard?.metrics ?? []).map((metric) => {
+                const row = metric.rows.find((item) => !item.isTotal && item.responsibleId === responsible.responsibleId);
+                return (
+                  <tr key={`${responsible.responsibleId ?? "none"}-${metric.metricKey}`}>
+                    <td className="commercial-responsible-col">{metric.label}</td>
+                    {months.map((monthLabel, index) => (
+                      <td key={monthLabel} className="commercial-value-cell">{formatCommercialValue(row?.months[String(index + 1)] ?? null, metric.unit)}</td>
+                    ))}
+                    <td className="commercial-summary-cell">{formatCommercialValue(row?.annualSummary ?? null, metric.unit)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    ));
+  }
+
+  function renderCommercialConsolidated() {
+    return (
+      <div className="table-wrap commercial-table-wrap">
+        <table className="commercial-table">
+          <thead>
+            <tr>
+              <th className="commercial-responsible-col">Indicador</th>
+              {months.map((month) => <th key={month}>{month}</th>)}
+              <th>Consolidado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(commercialDashboard?.metrics ?? []).map((metric) => {
+              const row = metric.rows.find((item) => item.isTotal);
+              return (
+                <tr key={`commercial-total-${metric.metricKey}`}>
+                  <td className="commercial-responsible-col">{metric.label}</td>
+                  {months.map((monthLabel, index) => (
+                    <td key={monthLabel} className="commercial-value-cell">{formatCommercialValue(row?.months[String(index + 1)] ?? null, metric.unit)}</td>
+                  ))}
+                  <td className="commercial-summary-cell">{formatCommercialValue(row?.annualSummary ?? null, metric.unit)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  function renderFinancialTransposed() {
+    const units = financialDashboard?.units ?? [];
+    return units.map((unit) => (
+      <section className="commercial-metric" key={`financial-transposed-${unit.id}`}>
+        <div className="toolbar commercial-metric-title"><h3>{unit.name}</h3></div>
+        <div className="table-wrap commercial-table-wrap">
+          <table className="commercial-table financial-table">
+            <thead>
+              <tr>
+                <th className="commercial-responsible-col">Indicador</th>
+                {months.map((month) => <th key={month}>{month}</th>)}
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(financialDashboard?.tables ?? []).map((table) => {
+                const row = table.rows.find((item) => !item.isTotal && item.unitId === unit.id);
+                return (
+                  <tr key={`${unit.id}-${table.indicator.id}`}>
+                    <td className="commercial-responsible-col">{table.indicator.name}</td>
+                    {months.map((monthLabel, index) => (
+                      <td key={monthLabel} className="commercial-value-cell">{formatFinancialValue(row?.months[String(index + 1)] ?? null, table.indicator.valueType)}</td>
+                    ))}
+                    <td className="commercial-summary-cell">{formatFinancialValue(row?.periodTotal ?? null, table.indicator.valueType)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    ));
+  }
+
+  function renderFinancialConsolidated() {
+    return (
+      <div className="table-wrap commercial-table-wrap">
+        <table className="commercial-table financial-table">
+          <thead>
+            <tr>
+              <th className="commercial-responsible-col">Indicador</th>
+              {months.map((month) => <th key={month}>{month}</th>)}
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(financialDashboard?.tables ?? []).map((table) => {
+              const row = table.rows.find((item) => item.isTotal);
+              return (
+                <tr key={`financial-total-${table.indicator.id}`}>
+                  <td className="commercial-responsible-col">{table.indicator.name}</td>
+                  {months.map((monthLabel, index) => (
+                    <td key={monthLabel} className="commercial-value-cell">{formatFinancialValue(row?.months[String(index + 1)] ?? null, table.indicator.valueType)}</td>
+                  ))}
+                  <td className="commercial-summary-cell">{formatFinancialValue(row?.periodTotal ?? null, table.indicator.valueType)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  function renderMarketingTransposed() {
+    const channels = marketingDashboard?.channels ?? [];
+    return channels.map((channel) => (
+      <section className="commercial-metric" key={`marketing-transposed-${channel}`}>
+        <div className="toolbar commercial-metric-title"><h3>{channel}</h3></div>
+        <div className="table-wrap commercial-table-wrap">
+          <table className="commercial-table marketing-table">
+            <thead>
+              <tr>
+                <th className="commercial-responsible-col">Indicador</th>
+                {months.map((month) => <th key={month}>{month}</th>)}
+                <th>Consolidado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(marketingDashboard?.metrics ?? []).map((metric) => {
+                const row = metric.rows.find((item) => !item.isTotal && item.channel === channel);
+                return (
+                  <tr key={`${channel}-${metric.metricKey}`}>
+                    <td className="commercial-responsible-col">{metric.label}</td>
+                    {months.map((monthLabel, index) => (
+                      <td key={monthLabel} className="commercial-value-cell">{formatMarketingValue(row?.months[String(index + 1)] ?? null, metric.unit)}</td>
+                    ))}
+                    <td className="commercial-summary-cell">{formatMarketingValue(row?.annualSummary ?? null, metric.unit)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    ));
+  }
+
+  function renderMarketingConsolidated() {
+    return (
+      <div className="table-wrap commercial-table-wrap">
+        <table className="commercial-table marketing-table">
+          <thead>
+            <tr>
+              <th className="commercial-responsible-col">Indicador</th>
+              {months.map((month) => <th key={month}>{month}</th>)}
+              <th>Consolidado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(marketingDashboard?.metrics ?? []).map((metric) => {
+              const row = metric.rows.find((item) => item.isTotal);
+              return (
+                <tr key={`marketing-total-${metric.metricKey}`}>
+                  <td className="commercial-responsible-col">{metric.label}</td>
+                  {months.map((monthLabel, index) => (
+                    <td key={monthLabel} className="commercial-value-cell">{formatMarketingValue(row?.months[String(index + 1)] ?? null, metric.unit)}</td>
+                  ))}
+                  <td className="commercial-summary-cell">{formatMarketingValue(row?.annualSummary ?? null, metric.unit)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   return (
     <main className="container">
       <h1 className="page-title">
@@ -1051,6 +1632,24 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
         <button className={`tab-btn ${activeTab === "indicators" ? "active" : ""}`} type="button" onClick={() => setActiveTab("indicators")}>
           Indicadores
         </button>
+        <button className={`tab-btn ${activeTab === "consolidation" ? "active" : ""}`} type="button" onClick={() => setActiveTab("consolidation")}>
+          Consolidação
+        </button>
+        {canUseCommercial ? (
+          <button className={`tab-btn ${activeTab === "commercial" ? "active" : ""}`} type="button" onClick={() => setActiveTab("commercial")}>
+            Drill Down Comercial
+          </button>
+        ) : null}
+        {canUseFinancial ? (
+          <button className={`tab-btn ${activeTab === "financial" ? "active" : ""}`} type="button" onClick={() => setActiveTab("financial")}>
+            Drill Down Financeiro
+          </button>
+        ) : null}
+        {canUseMarketing ? (
+          <button className={`tab-btn ${activeTab === "marketing" ? "active" : ""}`} type="button" onClick={() => setActiveTab("marketing")}>
+            Drill Down Marketing
+          </button>
+        ) : null}
         {canUseIssues ? (
           <button className={`tab-btn ${activeTab === "issues" ? "active" : ""}`} type="button" onClick={() => setActiveTab("issues")}>
             Issue Reports
@@ -1093,6 +1692,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
               </div>
               <div className="toolbar-actions indicator-admin-actions">
                 <button type="button" onClick={openIndicatorCreate}>Adicionar Indicador</button>
+                <button type="button" className="secondary" onClick={exportIndicatorsCsv}>Exportar Indicadores CSV</button>
                 <button
                   type="button"
                   className={indicatorActionMode === "edit" ? "" : "secondary"}
@@ -1183,6 +1783,9 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                           >
                             <div className="month-cell">
                               <span className={item.belowTarget ? "month-value below-target" : "month-value"}>{item.notApplicable ? "N/A" : formatNumber(item.value)}</span>
+                              <span className="month-target">{monthStatusLabel(item.status)}</span>
+                              {item.valueSource === "financial_drilldown" ? <span className="month-source">DD Fin.</span> : null}
+                              {item.valueSource === "marketing_drilldown" ? <span className="month-source">DD Mkt.</span> : null}
                               <span className="month-projected">Proj. {formatNumber(item.projectedValue)}</span>
                               <span className="month-target">Meta {formatNumber(item.monthlyTarget)}</span>
                             </div>
@@ -1193,43 +1796,434 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                   </tbody>
                 </table>
               </div>
-              <div className="indicator-table-panel annual-panel">
-                <table className="indicator-table indicator-table-split">
-                  <colgroup>
-                    <col className="annual-col" />
-                    <col className="annual-col" />
-                    <col className="annual-col" />
-                    <col className="annual-col" />
-                  </colgroup>
-                  <thead>
-                    <tr><th colSpan={4} className="section-header">Consolidado Anual</th></tr>
-                    <tr>
-                      <th>Real Anual</th>
-                      <th>Projetado Anual</th>
-                      <th>Meta Anual</th>
-                      <th>Confiança</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredIndicators.map((row) => (
-                      <tr key={row.indicatorId} style={{ "--area-row-bg": hexToRgba(row.areaHexColor, 0.08) } as CSSProperties}>
-                        <td>{formatNumber(row.annualReal)}</td>
-                        <td>
-                          <PerformanceBadge value={row.annualProjected} classification={row.projectedAchievementClassification} />
-                          <span className="month-target">{row.projectedAchievementPercent == null ? "" : `${formatNumber(row.projectedAchievementPercent)}%`}</span>
-                        </td>
-                        <td className={isExecutive ? "clickable-cell" : ""} onClick={() => openAnnualPlanning(row)}>{formatNumber(row.annualTarget)}</td>
-                        <td className={isExecutive ? "clickable-cell" : ""} onClick={() => openAnnualPlanning(row)} title={isExecutive ? "Editar planejamento anual" : undefined}>
-                          <PerformanceBadge value={row.confidenceLevel} classification={row.confidenceClassification} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
             </div>
             {filteredIndicators.length === 0 ? <div className="empty-table-message muted">Nenhum indicador encontrado.</div> : null}
           </div>
+        </section>
+      ) : activeTab === "consolidation" ? (
+        <section className="card app-view">
+          <div className="toolbar-actions filters-row">
+            <label>
+              Filtrar indicador ou area
+              <input value={search} onChange={(event) => setSearch(event.target.value)} />
+            </label>
+            {isExecutive ? (
+              <label>
+                Areas
+                <select
+                  multiple
+                  size={4}
+                  value={indicatorAreaFilter}
+                  onChange={(event) => setIndicatorAreaFilter(Array.from(event.target.selectedOptions).map((option) => option.value))}
+                >
+                  {areas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}
+                </select>
+              </label>
+            ) : null}
+          </div>
+          <div className="table-wrap">
+            <div className="indicator-table-panel">
+              <table className="indicator-table">
+                <thead>
+                  <tr><th colSpan={6} className="section-header">Consolidado Anual</th></tr>
+                  <tr>
+                    <th>Indicador</th>
+                    <th>Tipo</th>
+                    <th>Real Anual</th>
+                    <th>Projetado Anual</th>
+                    <th>Meta Anual</th>
+                    <th>Confiança</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredIndicators.map((row) => (
+                    <tr key={`${row.indicatorId}-annual`} style={{ "--area-row-bg": hexToRgba(row.areaHexColor, 0.08) } as CSSProperties}>
+                      <td>{row.indicatorName}</td>
+                      <td>{row.indicatorTypeLabel ?? aggregationLabel(row.aggregationType)}</td>
+                      <td>{formatNumber(row.annualReal)}</td>
+                      <td>
+                        <PerformanceBadge value={row.annualProjected} classification={row.projectedAchievementClassification} />
+                        <span className="month-target">{row.projectedAchievementPercent == null ? "" : `${formatNumber(row.projectedAchievementPercent)}%`}</span>
+                      </td>
+                      <td className={isExecutive ? "clickable-cell" : ""} onClick={() => openAnnualPlanning(row)}>{formatNumber(row.annualTarget)}</td>
+                      <td className={isExecutive ? "clickable-cell" : ""} onClick={() => openAnnualPlanning(row)} title={isExecutive ? "Editar planejamento anual" : undefined}>
+                        <PerformanceBadge value={row.confidenceLevel} classification={row.confidenceClassification} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="indicator-table-panel">
+              <table className="indicator-table">
+                <thead>
+                  <tr><th colSpan={9} className="section-header">Consolidação Trimestral</th></tr>
+                  <tr>
+                    <th>Indicador</th>
+                    <th>Tipo</th>
+                    <th>Último Trimestre Fechado</th>
+                    <th>Trimestre Vigente</th>
+                    <th>Análise do Trimestre Vigente</th>
+                    <th>Meta Trimestral</th>
+                    <th>Meta Anual</th>
+                    <th>Confiança</th>
+                    <th>Observação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredIndicators.map((row) => {
+                    const current = row.consolidation.currentQuarter;
+                    const closed = row.consolidation.lastClosedQuarter;
+                    return (
+                      <tr key={`${row.indicatorId}-quarter`} style={{ "--area-row-bg": hexToRgba(row.areaHexColor, 0.08) } as CSSProperties}>
+                        <td>{row.indicatorName}</td>
+                        <td>{row.indicatorTypeLabel ?? aggregationLabel(row.aggregationType)}</td>
+                        <td>{closed ? `${closed.label}: ${formatNumber(closed.value)}` : "-"}</td>
+                        <td>{current ? `${current.label}: ${formatNumber(current.value)}` : "-"}</td>
+                        <td>{current?.analysis ?? "-"}</td>
+                        <td>{formatNumber(current?.target ?? null)}</td>
+                        <td>{formatNumber(row.annualTarget)}</td>
+                        <td><PerformanceBadge value={row.confidenceLevel} classification={row.confidenceClassification} /></td>
+                        <td>{current?.observation ?? "-"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {filteredIndicators.length === 0 ? <div className="empty-table-message muted">Nenhum indicador encontrado.</div> : null}
+          </div>
+        </section>
+      ) : activeTab === "commercial" ? (
+        <section className="card app-view commercial-view">
+          <div className="toolbar">
+            <div>
+              <h2>Drill Down Comercial</h2>
+              <p className="muted">
+                Ultima sincronizacao: {commercialDashboard?.lastSuccessfulSyncAt ? new Date(commercialDashboard.lastSuccessfulSyncAt).toLocaleString("pt-BR") : "-"}
+              </p>
+            </div>
+            <div className="toolbar-actions">
+              {commercialDashboard?.activeJob ? <span className="status-pill">Sincronizacao em andamento</span> : null}
+              {user.canAdminUsers ? <button type="button" className="secondary" onClick={startCommercialSync}>Sincronizar agora</button> : null}
+              <button type="button" onClick={loadCommercialDashboard} disabled={commercialLoading}>Recarregar</button>
+            </div>
+          </div>
+
+          {renderDrilldownModeButtons(commercialViewMode, setCommercialViewMode)}
+
+          {commercialViewMode === "indicator" ? commercialDashboard?.metrics.map((metric) => (
+            <section className="commercial-metric" key={metric.metricKey}>
+              <div className="toolbar commercial-metric-title">
+                <h3>{metric.label}</h3>
+                <span className="muted">{metric.kind === "flow" ? "Fluxo" : "Estoque"} - {metric.unit === "money" ? "R$" : "Qtd."}</span>
+              </div>
+              <div className="table-wrap commercial-table-wrap">
+                <table className="commercial-table">
+                  <thead>
+                    <tr>
+                      <th className="commercial-responsible-col">Responsavel</th>
+                      {months.map((month) => <th key={month}>{month}</th>)}
+                      <th>{metric.summaryLabel}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metric.rows.map((row) => (
+                      <tr key={`${metric.metricKey}-${row.isTotal ? "total" : row.responsibleId ?? "none"}`} className={row.isTotal ? "commercial-total-row" : ""}>
+                        <td className="commercial-responsible-col">
+                          {row.responsibleName}
+                          {!row.responsibleActive ? <span className="inactive-badge">Inativo</span> : null}
+                        </td>
+                        {months.map((monthLabel, index) => {
+                          const month = index + 1;
+                          const value = row.months[String(month)];
+                          const clickable = hasCommercialValue(value);
+                          return (
+                            <td
+                              key={monthLabel}
+                              className={clickable ? "clickable-cell commercial-value-cell" : "commercial-value-cell"}
+                              onClick={() => clickable && openCommercialDrilldown(metric, row, month)}
+                              title={clickable ? "Abrir Drill Down" : undefined}
+                            >
+                              {formatCommercialValue(value, metric.unit)}
+                            </td>
+                          );
+                        })}
+                        <td className="commercial-summary-cell">{formatCommercialValue(row.annualSummary, metric.unit)}</td>
+                      </tr>
+                    ))}
+                    {metric.rows.length === 0 ? <tr><td colSpan={14} className="muted">Sem dados comerciais para o ano.</td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )) : null}
+
+          {commercialViewMode === "transposed" ? renderCommercialTransposed() : null}
+          {commercialViewMode === "consolidated" ? renderCommercialConsolidated() : null}
+
+          {!commercialDashboard || commercialDashboard.metrics.length === 0 ? (
+            <p className="muted">{commercialLoading ? "Carregando Drill Down Comercial..." : "Nenhum dado comercial encontrado."}</p>
+          ) : null}
+
+          {commercialSelection ? (
+            <aside className="side-panel">
+              <div className="toolbar">
+                <div>
+                  <h3>{commercialSelection.metric.label}</h3>
+                  <p className="muted">
+                    {commercialSelection.row.isTotal ? "Total" : commercialSelection.row.responsibleName} - {months[(commercialSelection.month ?? 1) - 1]}/{year}
+                  </p>
+                </div>
+                <button type="button" className="secondary" onClick={() => setCommercialSelection(null)}>Fechar</button>
+              </div>
+              <label>
+                Buscar Card
+                <input
+                  value={commercialSelection.query}
+                  onChange={(event) => {
+                    setCommercialItems(null);
+                    setCommercialSelection({ ...commercialSelection, query: event.target.value, page: 1 });
+                  }}
+                />
+              </label>
+              <div className="commercial-drill-list">
+                {(commercialItems?.items ?? []).map((item: CommercialDrilldownItem) => (
+                  <article className="commercial-drill-card" key={item.dealId}>
+                    <div className="toolbar">
+                      <strong>#{item.dealId} {item.title ?? ""}</strong>
+                      {item.bitrixUrl ? <a href={item.bitrixUrl} target="_blank" rel="noreferrer">Abrir Bitrix</a> : null}
+                    </div>
+                    <p className="muted">{item.responsibleName} - {item.stageName ?? item.stageId ?? "-"}</p>
+                    <p>{formatCommercialValue(item.monetaryContribution ?? item.opportunity, "money")} | {item.eventDate ? new Date(item.eventDate).toLocaleDateString("pt-BR") : item.referenceDate ? new Date(item.referenceDate).toLocaleDateString("pt-BR") : "-"}</p>
+                  </article>
+                ))}
+                {commercialItems && commercialItems.items.length === 0 ? <p className="muted">Nenhum Card encontrado.</p> : null}
+                {!commercialItems ? <p className="muted">Carregando Cards...</p> : null}
+              </div>
+              {commercialItems ? (
+                <div className="toolbar-actions">
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={commercialSelection.page <= 1}
+                    onClick={() => setCommercialSelection({ ...commercialSelection, page: commercialSelection.page - 1 })}
+                  >
+                    Anterior
+                  </button>
+                  <span className="muted">Pagina {commercialItems.page} de {Math.max(1, Math.ceil(commercialItems.totalItems / commercialItems.pageSize))}</span>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={commercialItems.page * commercialItems.pageSize >= commercialItems.totalItems}
+                    onClick={() => setCommercialSelection({ ...commercialSelection, page: commercialSelection.page + 1 })}
+                  >
+                    Proxima
+                  </button>
+                </div>
+              ) : null}
+            </aside>
+          ) : null}
+        </section>
+      ) : activeTab === "financial" ? (
+        <section className="card app-view financial-view">
+          <div className="toolbar">
+            <div>
+              <h2>Drill Down Financeiro</h2>
+              <p className="muted">
+                {financialDashboard ? `${financialDashboard.units.length} unidades ativas - ${financialDashboard.indicators.length} indicadores` : "Valores mensais manuais por unidade."}
+              </p>
+            </div>
+            <div className="toolbar-actions">
+              {canEditFinancial ? <span className="status-pill">Edicao liberada</span> : null}
+              <button type="button" onClick={loadFinancialDashboard} disabled={financialLoading}>Recarregar</button>
+            </div>
+          </div>
+
+          {renderDrilldownModeButtons(financialViewMode, setFinancialViewMode)}
+
+          {financialViewMode === "indicator" ? financialDashboard?.tables.map((table) => (
+            <section className="commercial-metric" key={table.indicator.id}>
+              <div className="toolbar commercial-metric-title">
+                <h3>{table.indicator.name}</h3>
+                <span className="muted">{table.indicator.aggregationType} - {table.indicator.valueType}</span>
+              </div>
+              <div className="table-wrap commercial-table-wrap">
+                <table className="commercial-table financial-table">
+                  <thead>
+                    <tr>
+                      <th className="commercial-responsible-col">Unidade</th>
+                      {months.map((month) => <th key={month}>{month}</th>)}
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {table.rows.map((row) => (
+                      <tr key={`${table.indicator.id}-${row.isTotal ? "total" : row.unitId}`} className={row.isTotal ? "commercial-total-row" : ""}>
+                        <td className="commercial-responsible-col">{row.unitName}</td>
+                        {months.map((monthLabel, index) => {
+                          const month = index + 1;
+                          const value = row.months[String(month)];
+                          const isEditable = canEditFinancial && !row.isTotal;
+                          const empty = value === null || value === undefined;
+                          return (
+                            <td
+                              key={monthLabel}
+                              className={`${isEditable ? "clickable-cell " : ""}commercial-value-cell financial-value-cell ${empty ? "empty-value-cell" : ""}`.trim()}
+                              onClick={() => isEditable && saveFinancialValue(table.indicator.id, row, month)}
+                              title={isEditable ? "Editar valor mensal" : empty ? "Sem valor informado" : undefined}
+                            >
+                              {formatFinancialValue(value, table.indicator.valueType)}
+                            </td>
+                          );
+                        })}
+                        <td className="commercial-summary-cell">{formatFinancialValue(row.periodTotal, table.indicator.valueType)}</td>
+                      </tr>
+                    ))}
+                    {table.rows.length === 0 ? <tr><td colSpan={14} className="muted">Sem unidades financeiras ativas.</td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )) : null}
+
+          {financialViewMode === "transposed" ? renderFinancialTransposed() : null}
+          {financialViewMode === "consolidated" ? renderFinancialConsolidated() : null}
+
+          {!financialDashboard || financialDashboard.tables.length === 0 ? (
+            <p className="muted">{financialLoading ? "Carregando Drill Down Financeiro..." : "Nenhum indicador financeiro cadastrado."}</p>
+          ) : null}
+        </section>
+      ) : activeTab === "marketing" ? (
+        <section className="card app-view commercial-view">
+          <div className="toolbar">
+            <div>
+              <h2>Drill Down Marketing</h2>
+              <p className="muted">
+                Ultima sincronizacao: {marketingDashboard?.lastSuccessfulSyncAt ? new Date(marketingDashboard.lastSuccessfulSyncAt).toLocaleString("pt-BR") : "-"}
+              </p>
+            </div>
+            <div className="toolbar-actions">
+              {marketingDashboard?.activeJob ? <span className="status-pill">Sincronizacao em andamento</span> : null}
+              {canAdmin ? <button type="button" className="secondary" onClick={startMarketingSync}>Sincronizar agora</button> : null}
+              <button type="button" onClick={loadMarketingDashboard} disabled={marketingLoading}>Recarregar</button>
+            </div>
+          </div>
+
+          {renderDrilldownModeButtons(marketingViewMode, setMarketingViewMode)}
+
+          {marketingViewMode === "indicator" ? marketingDashboard?.metrics.map((metric) => (
+            <section className="commercial-metric" key={metric.metricKey}>
+              <div className="toolbar commercial-metric-title">
+                <h3>{metric.label}</h3>
+                <span className="muted">{metric.kind === "ratio" ? "Taxa" : "Fluxo"} - {metric.unit === "percentage" ? "%" : "Qtd."}</span>
+              </div>
+              <div className="table-wrap commercial-table-wrap">
+                <table className="commercial-table marketing-table">
+                  <thead>
+                    <tr>
+                      <th className="commercial-responsible-col">Canal</th>
+                      {months.map((month) => <th key={month}>{month}</th>)}
+                      <th>{metric.summaryLabel}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metric.rows.map((row) => (
+                      <tr key={`${metric.metricKey}-${row.isTotal ? "total" : row.channel}`} className={row.isTotal ? "commercial-total-row" : ""}>
+                        <td className="commercial-responsible-col">{row.channel}</td>
+                        {months.map((monthLabel, index) => {
+                          const month = index + 1;
+                          const value = row.months[String(month)];
+                          const clickable = value != null;
+                          return (
+                            <td
+                              key={monthLabel}
+                              className={clickable ? "clickable-cell commercial-value-cell" : "commercial-value-cell empty-value-cell"}
+                              onClick={() => clickable && openMarketingDrilldown(metric, row, month)}
+                              title={clickable ? "Abrir Drill Down" : undefined}
+                            >
+                              {formatMarketingValue(value, metric.unit)}
+                            </td>
+                          );
+                        })}
+                        <td className="commercial-summary-cell">{formatMarketingValue(row.annualSummary, metric.unit)}</td>
+                      </tr>
+                    ))}
+                    {metric.rows.length === 0 ? <tr><td colSpan={14} className="muted">Sem dados de Marketing para o ano.</td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )) : null}
+
+          {marketingViewMode === "transposed" ? renderMarketingTransposed() : null}
+          {marketingViewMode === "consolidated" ? renderMarketingConsolidated() : null}
+
+          {!marketingDashboard || marketingDashboard.metrics.length === 0 ? (
+            <p className="muted">{marketingLoading ? "Carregando Drill Down Marketing..." : "Nenhum dado de Marketing encontrado."}</p>
+          ) : null}
+
+          {marketingSelection ? (
+            <aside className="side-panel">
+              <div className="toolbar">
+                <div>
+                  <h3>{marketingSelection.metric.label}</h3>
+                  <p className="muted">
+                    {marketingSelection.row.isTotal ? "Total" : marketingSelection.row.channel} - {months[marketingSelection.month - 1]}/{year}
+                  </p>
+                </div>
+                <button type="button" className="secondary" onClick={() => setMarketingSelection(null)}>Fechar</button>
+              </div>
+              <label>
+                Buscar Card
+                <input
+                  value={marketingSelection.query}
+                  onChange={(event) => {
+                    setMarketingItems(null);
+                    setMarketingSelection({ ...marketingSelection, query: event.target.value, page: 1 });
+                  }}
+                />
+              </label>
+              <div className="commercial-drill-list">
+                {(marketingItems?.items ?? []).map((item: MarketingDrilldownItem) => (
+                  <article className="commercial-drill-card" key={`${item.dealId}-${item.stageId ?? "stage"}`}>
+                    <div className="toolbar">
+                      <strong>#{item.dealId} {item.title ?? ""}</strong>
+                      {item.bitrixUrl ? <a href={item.bitrixUrl} target="_blank" rel="noreferrer">Abrir Bitrix</a> : null}
+                    </div>
+                    <p className="muted">{item.channel} - {item.stageName ?? item.stageId ?? "-"}</p>
+                    <p>
+                      {item.eventDate ? new Date(item.eventDate).toLocaleDateString("pt-BR") : "-"}
+                      {item.numeratorContribution ? " | Numerador" : item.denominatorContribution ? " | Denominador" : ""}
+                    </p>
+                  </article>
+                ))}
+                {marketingItems && marketingItems.items.length === 0 ? <p className="muted">Nenhum Card encontrado.</p> : null}
+                {!marketingItems ? <p className="muted">Carregando Cards...</p> : null}
+              </div>
+              {marketingItems ? (
+                <div className="toolbar-actions">
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={marketingSelection.page <= 1}
+                    onClick={() => setMarketingSelection({ ...marketingSelection, page: marketingSelection.page - 1 })}
+                  >
+                    Anterior
+                  </button>
+                  <span className="muted">Pagina {marketingItems.page} de {Math.max(1, Math.ceil(marketingItems.totalItems / marketingItems.pageSize))}</span>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={marketingItems.page * marketingItems.pageSize >= marketingItems.totalItems}
+                    onClick={() => setMarketingSelection({ ...marketingSelection, page: marketingSelection.page + 1 })}
+                  >
+                    Proxima
+                  </button>
+                </div>
+              ) : null}
+            </aside>
+          ) : null}
         </section>
       ) : activeTab === "issues" ? (
         <section className="card app-view">
@@ -1237,7 +2231,10 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
             <h2>Issue Reports</h2>
             <div className="toolbar-actions">
               {isExecutive ? (
-                <button type="button" className="secondary" onClick={() => setShowTagsPanel((value) => !value)}>Gerenciar Tags</button>
+                <>
+                  <button type="button" className="secondary" onClick={exportIssuesCsv}>Exportar Issues CSV</button>
+                  <button type="button" className="secondary" onClick={() => setShowTagsPanel((value) => !value)}>Gerenciar Tags</button>
+                </>
               ) : null}
               <button type="button" onClick={() => setShowIssueForm((value) => !value)}>Novo Issue</button>
             </div>
@@ -1323,15 +2320,30 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
               </fieldset>
               <label>
                 Ocorrencia
-                <textarea required value={issueForm.ocorrencia} onChange={(event) => setIssueForm({ ...issueForm, ocorrencia: event.target.value })} />
+                <textarea
+                  required
+                  placeholder={issuePlaceholders.ocorrencia}
+                  value={issueForm.ocorrencia}
+                  onChange={(event) => setIssueForm({ ...issueForm, ocorrencia: event.target.value })}
+                />
               </label>
               <label>
                 Identificacao da causa
-                <textarea required value={issueForm.identificacaoCausa} onChange={(event) => setIssueForm({ ...issueForm, identificacaoCausa: event.target.value })} />
+                <textarea
+                  required
+                  placeholder={issuePlaceholders.identificacaoCausa}
+                  value={issueForm.identificacaoCausa}
+                  onChange={(event) => setIssueForm({ ...issueForm, identificacaoCausa: event.target.value })}
+                />
               </label>
               <label>
                 Proposta de Solucao
-                <textarea required value={issueForm.propostaSolucao} onChange={(event) => setIssueForm({ ...issueForm, propostaSolucao: event.target.value })} />
+                <textarea
+                  required
+                  placeholder={issuePlaceholders.propostaSolucao}
+                  value={issueForm.propostaSolucao}
+                  onChange={(event) => setIssueForm({ ...issueForm, propostaSolucao: event.target.value })}
+                />
               </label>
               <div className="toolbar-actions">
                 <button type="submit">Salvar Issue</button>
@@ -1737,15 +2749,19 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                 <textarea value={indicatorForm.description} onChange={(event) => setIndicatorForm({ ...indicatorForm, description: event.target.value })} />
               </label>
               <label>
-                Agregacao
+                Formula
+                <textarea value={indicatorForm.formula} onChange={(event) => setIndicatorForm({ ...indicatorForm, formula: event.target.value })} />
+              </label>
+              <label>
+                Tipo
                 <select
                   required
                   value={indicatorForm.aggregationType}
                   onChange={(event) => setIndicatorForm({ ...indicatorForm, aggregationType: event.target.value as AggregationType })}
                 >
-                  <option value="sum">Soma</option>
-                  <option value="avg">Media ponderada</option>
-                  <option value="latest">Ultimo valor</option>
+                  <option value="sum">Fluxo</option>
+                  <option value="latest">Posicao</option>
+                  <option value="avg">Proporcional</option>
                 </select>
               </label>
               <label>
@@ -1781,12 +2797,71 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
             <h2>Valores mensais</h2>
             <p className="muted">{weeklyEditor.row.indicatorName} - {months[weeklyEditor.month - 1]}/{year}</p>
             <div className="form-grid">
+              {weeklyEditor.financialDrilldownValue != null ? (
+                <fieldset className="option-panel">
+                  <legend>Origem do valor real</legend>
+                  <p className="muted">
+                    Consolidado atual do Drill Down Financeiro: {formatNumber(weeklyEditor.financialDrilldownValue)}
+                    {weeklyEditor.row.unit ? ` ${weeklyEditor.row.unit}` : ""}
+                  </p>
+                  <label className="radio-line">
+                    <input
+                      type="radio"
+                      checked={weeklyEditor.valueMode === "manual"}
+                      onChange={() => setWeeklyEditor((current) => (current ? { ...current, valueMode: "manual" } : current))}
+                    />
+                    Preencher valores manualmente
+                  </label>
+                  <label className="radio-line">
+                    <input
+                      type="radio"
+                      checked={weeklyEditor.valueMode === "financial_drilldown"}
+                      onChange={() =>
+                        setWeeklyEditor((current) =>
+                          current ? { ...current, valueMode: "financial_drilldown", notApplicable: false } : current
+                        )
+                      }
+                    />
+                    Usar consolidado do Drill Down
+                  </label>
+                </fieldset>
+              ) : null}
+              {weeklyEditor.marketingDrilldownValue != null ? (
+                <fieldset className="option-panel">
+                  <legend>Origem do valor real</legend>
+                  <p className="muted">
+                    Consolidado atual do Drill Down Marketing: {formatNumber(weeklyEditor.marketingDrilldownValue)}
+                    {weeklyEditor.row.unit ? ` ${weeklyEditor.row.unit}` : ""}
+                  </p>
+                  <label className="radio-line">
+                    <input
+                      type="radio"
+                      checked={weeklyEditor.valueMode === "manual"}
+                      onChange={() => setWeeklyEditor((current) => (current ? { ...current, valueMode: "manual" } : current))}
+                    />
+                    Preencher valores manualmente
+                  </label>
+                  <label className="radio-line">
+                    <input
+                      type="radio"
+                      checked={weeklyEditor.valueMode === "marketing_drilldown"}
+                      onChange={() =>
+                        setWeeklyEditor((current) =>
+                          current ? { ...current, valueMode: "marketing_drilldown", notApplicable: false } : current
+                        )
+                      }
+                    />
+                    Usar consolidado do Drill Down
+                  </label>
+                </fieldset>
+              ) : null}
               {weeklyEditor.payload.weeks.map((week) => (
                 <label key={week.weekNumber}>
                   {week.label}
                   <input
                     type="number"
                     step="0.01"
+                    disabled={weeklyEditor.valueMode !== "manual"}
                     value={weeklyEditor.values[week.weekNumber] ?? ""}
                     onChange={(event) =>
                       setWeeklyEditor((current) =>
@@ -1818,6 +2893,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                 <input
                   type="checkbox"
                   checked={weeklyEditor.notApplicable}
+                  disabled={weeklyEditor.valueMode !== "manual"}
                   onChange={(event) =>
                     setWeeklyEditor((current) => (current ? { ...current, notApplicable: event.target.checked } : current))
                   }

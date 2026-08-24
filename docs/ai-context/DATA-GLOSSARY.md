@@ -1,45 +1,39 @@
-# Glossario de Dados: PSC Executavel
+# Glossario De Dados: PSC
 
-Data: 2026-07-11
-Escopo: aplicacao executavel PSC e modulo executavel de administracao de usuarios. `psc-web/` esta fora do escopo.
+Data: 2026-08-04
 
-## Glossario
-
-| Dado | Significado | Tipo/formato | Armazenamento | Produtores | Consumidores | Tratamentos | Validacao/seguranca | Evidencia |
+| Dado | Significado | Tipo/Forma | Armazenamento | Produtores | Consumidores | Tratamentos/Regras | Sensibilidade | Evidencia |
 |---|---|---|---|---|---|---|---|---|
-| Usuario | Pessoa autenticavel no PSC. | `User`; linha em `users`. | Supabase `users`. | Admin executavel, seed/migrations. | Auth, indicadores, Issue Reports, admin. | Login/email normalizado; `area_ids` carregado de `user_area_access`; primeira area espelhada em `area_id`. | Senha sempre como hash; usuario precisa estar ativo; role valida. | `models.py`, `rules.py`, `users_app.py`, `supabase_repositories.py` |
-| Papel | Categoria de permissao. | `gestor_area`, `executivo`, `executivo_visualizacao`. | Supabase `roles`; `users.role`. | SQL migrations. | Regras de autorizacao. | Checagens literais em use cases e regras. | Role invalida e rejeitada. | `models.py`, `rules.py`, SQL |
-| Area | Unidade organizacional dona de indicadores e acessos. | `Area`; `id`, `name`, `hex_color`, `is_active`. | Supabase `areas`. | Endpoints executivos, seed SQL. | Indicadores, filtros, usuarios, Issue Reports. | Ordenada por nome; desativacao via `is_active`. | Nome obrigatorio; unicidade de area ativa; cor `#RRGGBB`. | `CreateArea`, `UpdateArea`, repository |
-| Acesso usuario-area | Vinculo muitos-para-muitos entre usuarios e areas. | `(user_id, area_id)`. | Supabase `user_area_access`. | Admin executavel. | Autorizacao e filtro de indicadores. | Deduplicado; carregado em `User.area_ids`. | Cascade em delete de usuario/area. | `users_app.py`, `SupabaseUserRepository`, SQL |
-| Unidade de indicador | Unidade de medida exibida no indicador. | `IndicatorUnit`; `code`, `label`. | Supabase `indicator_units`. | SQL. | Cadastro/listagem de indicadores. | Apenas unidades ativas sao listadas. | Obrigatoria no cadastro/edicao de indicador. | `IndicatorUnit`, `list_units`, `CreateIndicator` |
-| Indicador | KPI acompanhado por area. | `Indicator`, `NewIndicator`, `IndicatorTableRow`. | Supabase `indicators`. | Executivo. | Dashboard, valores, metas, projecoes, planos. | Enriquecido com area e unidade; listagem usa ativos. | `aggregation_type` em `sum/avg/latest`; maturidade 0..100; nome ativo unico. | `models.py`, use cases, SQL |
-| Valor semanal | Valor numerico de uma faixa mensal do indicador. | `IndicatorValue`; ano/mes/faixa/valor/usuario. | Supabase `indicator_values`. | Gestor de area. | Calculo mensal e dashboard. | Upsert por `indicator_id/year/month/week_number`; string vira Decimal. | Mes 1..12; faixa 1..4 na logica atual. | `RegisterIndicatorValue`, rotas, regras |
-| Historico de valor | Auditoria de alteracao de valor semanal. | Valor anterior/novo e usuario. | Supabase `indicator_value_history`. | Repository ao alterar valor existente. | Auditoria e rastreio. | Criado apenas quando valor muda. | Referencia indicador e usuario alterador. | `upsert_weekly_value`, SQL |
-| Meta mensal | Meta executiva de um indicador no mes. | `IndicatorMonthTarget`. | Supabase `indicator_month_targets`. | Executivo. | Dashboard e comparacao abaixo da meta. | Valor vazio remove meta. | Valor nao pode ser negativo. | `UpsertIndicatorMonthTarget`, testes |
-| Projecao mensal | Valor projetado mensal. | `IndicatorMonthProjection`. | Supabase `indicator_month_projections`. | Usuario com permissao. | Dashboard e planejamento. | Valor vazio remove projecao. | Exige `can_edit_projected_value`; negativo permitido. | `UpsertIndicatorMonthProjection`, testes |
-| Mes nao aplicavel | Marcacao de que um indicador nao se aplica em determinado mes. | `IndicatorMonthNotApplicable`. | Supabase `indicator_month_not_applicable`. | Gestor da area. | Dashboard mensal. | Quando marcado, valor mensal real fica `None`; meta/projecao permanecem. | Gestor deve ter acesso ao indicador. | `SetIndicatorMonthNotApplicable`, `ListIndicators`, testes |
-| Plano de acao | Acao corretiva vinculada a indicador. | `ActionPlan`, `NewActionPlan`. | Supabase `action_plans`. | Executivo. | UI, historico, Bitrix24. | Pode criar tarefa Bitrix e guardar `bitrix_task_id`. | Executivo apenas; campos textuais obrigatorios; responsavel obrigatorio. | `CreateActionPlan`, `BitrixTaskGateway` |
-| Historico de plano | Evento de auditoria do plano de acao. | `ActionPlanHistoryEvent`. | Supabase `action_plan_history`. | Use case de plano. | Auditoria. | Evento de criacao coberto por testes. | Referencia plano e criador. | `CreateActionPlan`, testes |
-| Usuario Bitrix | Responsavel candidato para plano de acao. | `BitrixUser`; `id`, `name`, `email`. | Diretorio Supabase opcional ou API Bitrix. | `SupabaseBitrixUserDirectory`, `BitrixClient`. | Autocomplete e atribuicao de tarefa. | Busca local normaliza acentos; fallback varre usuarios ativos Bitrix. | Webhook nao documentado com valor. | `bitrix_task_gateway.py`, `bitrix_client.py`, testes |
-| Issue Report | Registro de problema/ocorrencia/oportunidade. | `IssueReport`, `NewIssueReport`. | Supabase `issue_reports`. | Usuarios com permissao. | Lista de issues e revisao executiva. | Scores GUT calculados; campos legados e novos sao mapeados. | Permissao necessaria; GUT 1..5; soft delete. | `CreateIssueReport`, `ListIssueReports`, repository |
-| Status de Issue | Estado de workflow da issue. | Texto de conjunto fixo em portugues. | `issue_reports.status`. | Executivo. | UI de Issue Reports. | Validado antes de update. | Status invalido rejeitado. | `IssueStatus`, `ensure_issue_status` |
-| Tag de Issue | Marcador classificatorio da issue. | `IssueTag`; nome/cor/ativo. | Supabase `issue_tags`. | Executivo. | Filtro e exibicao de Issue Reports. | Desativada por `is_active`; nome ativo unico. | Nome obrigatorio; cor `#RRGGBB`. | Rotas, SQL `023` |
-| Vinculo Issue-Tag | Relacao muitos-para-muitos entre issue e tag. | `(issue_id, tag_id)`. | Supabase `issue_report_tags`. | Executivo. | Serializacao de Issue Reports. | Semantica de substituicao total ao salvar tags. | Referencia issue e tag. | `replace_issue_tags`, SQL `023` |
-| Token de sessao | Credencial bearer de autenticacao. | Payload/signature base64url. | Local storage do navegador; sem persistencia server-side. | `SimpleTokenService`. | Autenticacao API. | HMAC-SHA256 com `sub` e `exp`. | Usa `APP_SECRET_KEY`; TTL configuravel no app e fixo 720 no admin. | `SimpleTokenService`, `web/app.js`, `admin_web/app.js` |
-| Configuracoes de ambiente | Parametros de runtime. | Variaveis de ambiente. | `.env`, `.env` empacotado, process env. | Usuario/ambiente. | Settings, Supabase, Bitrix, tokens, admin. | Carrega `.env` local; em frozen tambem verifica `.env` empacotado. | Valores secretos nao devem ser documentados. | `src/infra/config.py`, `.env.example` |
+| Usuario | Conta de acesso ao PSC. | `User` / linha `users` | Supabase `users` | Admin local, rotas admin, login Bitrix | Autenticacao, autorizacao, dashboards | `is_active`, `role`, flags e areas vinculadas controlam acesso | Contem email, hash de senha, IDs Bitrix | `src/core/domain/models.py`, `psc-web/src/core/domain/models.ts`, SQL `024`, `025` |
+| Papel | Nivel de permissao. | `Role` | `roles`, literais TS/Python | Migrations/admin | Regras de dominio | Roles area-scoped e globais | Baixa | `rules.ts`, `rules.py` |
+| Area | Unidade organizacional para indicadores. | `Area` | `areas` | Executivo/admin | Indicadores, usuarios, reports | Nome ativo unico; cor `#RRGGBB` | Baixa | SQL `011`, rotas `areas` |
+| Indicador | Medida acompanhada por area. | `Indicator` | `indicators` | Executivo/admin | Dashboard, valores, metas, reports | `aggregation_type`: `sum`, `avg`, `latest`; maturidade 0-100 | Media | `models.ts`, SQL `001`, `009`, `010`, `026` |
+| Unidade de indicador | Unidade exibida/calculada. | `IndicatorUnit` | `indicator_units` | Migration/admin | Indicadores | FK opcional em indicador | Baixa | SQL `009`, `010` |
+| Valor semanal | Valor informado por faixa mensal. | `IndicatorValue` | `indicator_values` | Gestor | Calculo mensal/anual | Faixas 1-4; gestor apenas areas vinculadas | Media | SQL `013`, `weekly-values` |
+| Historico de valor | Auditoria de mudanca de valor semanal. | Linha historica | `indicator_value_history` | Repositorios Supabase | Auditoria | Criado quando valor existente muda | Media | SQL `003` |
+| Meta mensal | Valor alvo por indicador/mes. | Numero | `indicator_month_targets` | Executivo | Dashboard | Nao pode ser negativa | Media | SQL `012`, rota `monthly-target` |
+| Projecao mensal | Valor projetado por indicador/mes. | Numero | `indicator_month_projections` | Usuarios com permissao | Dashboard | Pode ser negativa; exige `can_edit_projected_value` | Media | SQL `018`, rota `monthly-projection` |
+| Mes nao aplicavel | Marcacao para ocultar/ignorar mes. | Boolean por indicador/mes | `indicator_month_not_applicable` | Gestor autorizado | Dashboard | Nao apaga meta/projecao | Baixa | rota `monthly-not-applicable` |
+| Plano de acao | Acao corretiva vinculada a indicador. | `ActionPlan` | `action_plans` | Executivo | Dashboard, Bitrix | Pode gerar tarefa Bitrix24 | Media | `create-action-plan`, `bitrix-gateway.ts` |
+| Tarefa Bitrix | Tarefa externa associada a plano. | ID externo | Bitrix24 + `bitrix_task_id` | Gateway Bitrix | Usuarios Bitrix | Criada quando webhook configurado | Pode conter dados operacionais | `BitrixTaskGateway` |
+| Issue Report | Registro de problema/ocorrencia. | `IssueReport` | `issue_reports` | Usuario autorizado | Executivo, dashboard | GUT solicitante e executivo; status controlado | Media/alta | SQL `020..023`, rotas `issue-reports` |
+| Issue Tag | Categoria de Issue Report. | `IssueTag` | `issue_tags`, `issue_report_tags` | Executivo | Issue Reports | Cor `#RRGGBB` opcional | Baixa | SQL `023` |
+| Win Report | Registro de ganho/vitoria. | `WinReport` | Tabelas de wins | Usuario autorizado | Executivo, dashboard | Fluxo similar a Issue Reports | Media | SQL `026`, `027`, rotas `wins` |
+| Win Tag | Categoria de Win. | `WinTag` | `win_tags`, join wins/tags | Executivo | Wins | Cor opcional | Baixa | rotas `win-tags` |
+| Bitrix User | Usuario externo para responsavel/login. | `BitrixUser` | Bitrix24, opcional Supabase | Bitrix API, directory Supabase | Autocomplete, login, tarefas | Fallback Bitrix quando diretorio local nao resolve | Contem email/ID externo | `bitrix-users`, `resolve-bitrix-login` |
+| Job de sync | Controle operacional de sincronizacao. | Linha `bitrix_sync_jobs` | Supabase | RPCs/SQL, UI, cron | Edge Functions, dashboards de status | `job_type` isola Comercial/Marketing/Full | Operacional | SQL `028`, `031`, `032` por contexto recente |
+| Deal Comercial | Card CRM categoria comercial. | Linha `bitrix_crm_deals` | Supabase materializado | `commercial-sync` | Drill Down Comercial | Sincronizado de Bitrix categoria 0 por padrao | Pode conter dados comerciais | Contexto recente `commercial-sync` |
+| Historico de estagio comercial | Movimento de card no funil. | `StageHistory` | `bitrix_crm_stage_history` | Bitrix `crm.stagehistory.list` | Ciclos e agregados | Filtrado por categoria e data | Comercial sensivel | Contexto recente |
+| Ciclo comercial | Periodo logico de um deal em processo. | `Cycle` | `bitrix_crm_deal_cycles` | `commercial-sync` | `commercial_drilldown_items` | `cycle_id` deterministico por deal/ciclo | Comercial sensivel | SQL `035`, contexto recente |
+| Agregado Comercial | Celula mensal por metrica/responsavel. | Linha agregada | `commercial_drilldown_monthly` | `commercial-sync` | Dashboard | Rebuild por ano/mes conforme sync | Comercial sensivel | Contexto recente |
+| Item Comercial | Linha de detalhe que compoe agregado. | Linha detalhe | `commercial_drilldown_items` | `commercial-sync` | Drill down de itens | FK para ciclo; `ON UPDATE CASCADE` recomendado | Comercial sensivel | SQL `035` |
+| Deal Marketing | Card dos CRMs 95/125. | Linha `bitrix_marketing_deals` | Supabase | `marketing-sync` | Marketing Drill Down | CRM 125 = `OUTBOUND`; CRM 95 por fonte/tags | Marketing/comercial | Contexto recente |
+| Agregado Marketing | Celula mensal por metrica/canal. | Linha agregada | `marketing_drilldown_monthly` | `marketing-sync` | Dashboard Marketing | `conversion_rate`, `leads_generated`, `scheduled_meetings` | Comercial/marketing | SQL `033`, contexto recente |
+| Item Marketing | Detalhe de contribuicao por card. | Linha detalhe | `marketing_drilldown_items` | `marketing-sync` | Drilldown por canal/mes | Won conta numerador e `scheduled_meetings` | Comercial/marketing | Contexto recente |
+| Config Marketing | Parametros de CRM/canal/metrica. | JSONB por chave | `marketing_drilldown_config` | SQL `033` | Edge Function | CRM 95/125, canal rules, sync mode | Operacional | SQL `033` |
+| Secret Cron | URL Supabase e service role usados pelo banco. | Vault secret | Supabase Vault | Admin Supabase | `invoke_edge_function` | Nunca documentar valor | Alta | SQL `034` |
 
-## Variaveis de Ambiente Conhecidas
+## Observacoes
 
-Valores nao foram lidos nem registrados.
-
-- `SUPABASE_URL`
-- `SUPABASE_KEY`
-- `BITRIX_WEBHOOK_URL`
-- `APP_SECRET_KEY`
-- `SUPABASE_USERS_URL`
-- `SUPABASE_USERS_KEY`
-- `SUPABASE_USERS_TABLE`
-- `APP_TOKEN_TTL_MINUTES`
-- `LOG_LEVEL`
-- `USER_ADMIN_PASSWORD`
-- Aliases de compatibilidade: `USERS_SUPABASE_URL`, `SUPABASE_USERS_SERVICE_ROLE_KEY`, `USERS_SUPABASE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+- Valores secretos de `.env`, `.env.local`, Vault e webhooks Bitrix24 nao foram lidos nem documentados.
+- Tabelas de Drill Down recentes aparecem como contexto operacional desta sessao; confirmar presenca das migrations correspondentes no repositorio antes de deploy.

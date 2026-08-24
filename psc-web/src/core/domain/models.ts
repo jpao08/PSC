@@ -5,6 +5,8 @@ export type Role =
   | "executivo"
   | "executivo_visualizacao";
 export type AggregationType = "sum" | "avg" | "latest";
+export type IndicatorTypeLabel = "Fluxo" | "Posicao" | "Proporcional";
+export type MonthStatus = "filled" | "pending" | "not_calculable";
 export type IssueStatus =
   | "Concluido"
   | "Concluído"
@@ -33,6 +35,10 @@ export type User = {
   canEditIndicatorMaturity: boolean;
   canUseIssueReports: boolean;
   canAdminUsers: boolean;
+  canViewCommercialDrilldown: boolean;
+  canViewMarketingDrilldown: boolean;
+  canViewFinancialDrilldown: boolean;
+  canEditFinancialDrilldown: boolean;
   bitrixUserId: string | null;
   bitrixPortalDomain: string | null;
 };
@@ -64,6 +70,7 @@ export type Indicator = {
   areaHexColor: string | null;
   name: string;
   description: string | null;
+  formula?: string | null;
   aggregationType: AggregationType;
   unitId: string | null;
   unit: string | null;
@@ -87,7 +94,9 @@ export type IndicatorTableRow = {
   areaName: string | null;
   areaHexColor: string | null;
   description: string | null;
+  formula?: string | null;
   aggregationType: AggregationType;
+  indicatorTypeLabel: IndicatorTypeLabel;
   unitId: string | null;
   unit: string | null;
   maturityLevel: number | null;
@@ -99,14 +108,39 @@ export type IndicatorTableRow = {
   maturityClassification: PerformanceClassification;
   confidenceClassification: PerformanceClassification;
   projectedAchievementClassification: PerformanceClassification;
+  consolidation: {
+    lastClosedQuarter: QuarterSummary | null;
+    currentQuarter: QuarterSummary | null;
+  };
   months: Array<{
     month: number;
     value: number | null;
+    valueSource: "manual" | "financial_drilldown" | "marketing_drilldown" | "empty" | "not_applicable";
+    financialDrilldownValue: number | null;
+    marketingDrilldownValue: number | null;
     projectedValue: number | null;
     monthlyTarget: number | null;
+    status: MonthStatus;
     notApplicable: boolean;
     belowTarget: boolean;
   }>;
+};
+
+export type QuarterSummary = {
+  quarter: 1 | 2 | 3 | 4;
+  label: string;
+  months: number[];
+  value: number | null;
+  target: number | null;
+  annualTarget: number | null;
+  completenessPercent: number | null;
+  filledCount: number;
+  expectedCount: number;
+  notCalculableMonths: number[];
+  pendingMonths: number[];
+  analysis: string;
+  observation: string;
+  isClosed: boolean;
 };
 
 export type PerformanceClassification =
@@ -192,4 +226,187 @@ export type WinReport = {
   reviewedBy: string | null;
   reviewedAt: string | null;
   tags: WinTag[];
+};
+
+export type CommercialMetricKind = "flow" | "stock";
+export type CommercialMetricUnit = "quantity" | "money";
+export type CommercialSyncStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+export type CommercialSyncJob = {
+  jobId: string;
+  jobType: string;
+  status: CommercialSyncStatus;
+  startedAt: string | null;
+  currentStep: string | null;
+  processedRecords: number;
+  totalRecords: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type CommercialDrilldownRow = {
+  responsibleId: string | null;
+  responsibleName: string;
+  responsibleActive: boolean;
+  isTotal?: boolean;
+  months: Record<string, number | null>;
+  annualSummary: number | null;
+};
+
+export type CommercialDrilldownMetric = {
+  metricKey: string;
+  label: string;
+  kind: CommercialMetricKind;
+  unit: CommercialMetricUnit;
+  summaryLabel: string;
+  rows: CommercialDrilldownRow[];
+};
+
+export type CommercialDrilldownDashboard = {
+  year: number;
+  months: number[];
+  responsibles: Array<{
+    responsibleId: string | null;
+    responsibleName: string;
+    active: boolean;
+  }>;
+  metrics: CommercialDrilldownMetric[];
+  lastSuccessfulSyncAt: string | null;
+  activeJob: CommercialSyncJob | null;
+};
+
+export type CommercialDrilldownItem = {
+  dealId: string;
+  title: string | null;
+  responsibleId: string | null;
+  responsibleName: string;
+  responsibleStatus: "active" | "inactive";
+  stageId: string | null;
+  stageName: string | null;
+  eventDate: string | null;
+  referenceDate: string | null;
+  quantityContribution: number | null;
+  monetaryContribution: number | null;
+  opportunity: number | null;
+  currencyId: string | null;
+  bitrixUrl: string | null;
+};
+
+export type CommercialDrilldownItemsPage = {
+  year: number;
+  month: number;
+  metricKey: string;
+  responsibleId: string | null;
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  items: CommercialDrilldownItem[];
+};
+
+export type CommercialSyncStartResult = {
+  jobId: string;
+  status: CommercialSyncStatus;
+  created: boolean;
+  message: string;
+};
+
+export type MarketingMetricKind = "flow" | "ratio";
+export type MarketingMetricUnit = "quantity" | "percentage";
+
+export type MarketingDrilldownRow = {
+  channel: string;
+  isTotal?: boolean;
+  months: Record<string, number | null>;
+  numeratorMonths: Record<string, number | null>;
+  denominatorMonths: Record<string, number | null>;
+  annualSummary: number | null;
+};
+
+export type MarketingDrilldownMetric = {
+  metricKey: string;
+  label: string;
+  indicatorName: string;
+  kind: MarketingMetricKind;
+  unit: MarketingMetricUnit;
+  summaryLabel: string;
+  rows: MarketingDrilldownRow[];
+};
+
+export type MarketingDrilldownDashboard = {
+  year: number;
+  months: number[];
+  channels: string[];
+  metrics: MarketingDrilldownMetric[];
+  lastSuccessfulSyncAt: string | null;
+  activeJob: CommercialSyncJob | null;
+};
+
+export type MarketingDrilldownItem = {
+  dealId: string;
+  title: string | null;
+  categoryId: number;
+  channel: string;
+  stageId: string | null;
+  stageName: string | null;
+  eventDate: string | null;
+  quantityContribution: number | null;
+  numeratorContribution: number | null;
+  denominatorContribution: number | null;
+  bitrixUrl: string | null;
+};
+
+export type MarketingDrilldownItemsPage = {
+  year: number;
+  month: number;
+  metricKey: string;
+  channel: string | null;
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  items: MarketingDrilldownItem[];
+};
+
+export type MonthlyCellState = "empty" | "zero" | "value" | "not_applicable" | "error" | "processing";
+export type FinancialValueType = "integer" | "decimal" | "percentage" | "money";
+export type FinancialAggregationType = "sum" | "avg" | "ratio" | "latest" | "formula";
+
+export type FinancialUnit = {
+  id: string;
+  name: string;
+  bitrixSpaItemId: string;
+  bitrixEntityTypeId: number;
+  bitrixCategoryId: number;
+  isActive: boolean;
+  lastSyncedAt: string | null;
+};
+
+export type FinancialIndicator = {
+  id: string;
+  name: string;
+  description: string | null;
+  valueType: FinancialValueType;
+  aggregationType: FinancialAggregationType;
+  displayOrder: number;
+  isActive: boolean;
+};
+
+export type FinancialDrilldownRow = {
+  unitId: string | null;
+  unitName: string;
+  isTotal: boolean;
+  months: Record<string, number | null>;
+  periodTotal: number | null;
+};
+
+export type FinancialDrilldownTable = {
+  indicator: FinancialIndicator;
+  rows: FinancialDrilldownRow[];
+};
+
+export type FinancialDrilldownDashboard = {
+  year: number;
+  months: number[];
+  units: FinancialUnit[];
+  indicators: FinancialIndicator[];
+  tables: FinancialDrilldownTable[];
 };

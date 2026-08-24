@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import re
 import secrets
+from datetime import date
 from decimal import Decimal
 from typing import Iterable
 
@@ -222,6 +223,20 @@ def calculate_annual_value(
     return sum(raw_values, start=Decimal("0")) / Decimal(len(raw_values))
 
 
+def calculate_period_value(
+    values: Iterable[tuple[int, Decimal]],
+    aggregation_type: AggregationType,
+) -> Decimal | None:
+    return calculate_annual_value(values=values, aggregation_type=aggregation_type)
+
+
+def resolve_monthly_snapshot(values: Iterable[tuple[int, Decimal]]) -> Decimal | None:
+    collected = list(values)
+    if not collected:
+        return None
+    return max(collected, key=lambda item: item[0])[1]
+
+
 def ensure_hex_color_or_none(hex_color: str | None, field_name: str = "hex_color") -> str | None:
     if hex_color is None:
         return None
@@ -239,24 +254,113 @@ def calculate_monthly_value(
     year: int,
     month: int,
 ) -> Decimal | None:
-    collected = list(values)
-    if not collected:
-        return None
+    _ = (aggregation_type, year, month)
+    return resolve_monthly_snapshot(values)
 
-    raw_values = [value for _, value in collected]
-    total = sum(raw_values, start=Decimal("0"))
+
+def indicator_type_label(aggregation_type: AggregationType) -> str:
     if aggregation_type == "sum":
-        return total
+        return "Fluxo"
     if aggregation_type == "latest":
-        return max(collected, key=lambda item: item[0])[1]
+        return "Posicao"
+    return "Proporcional"
 
-    weighted_total = Decimal("0")
-    total_days = Decimal("0")
-    for week_number, value in collected:
-        days = Decimal(get_range_days_count(year=year, month=month, week_number=week_number))
-        weighted_total += value * days
-        total_days += days
 
-    if total_days == Decimal("0"):
+def month_status(value: Decimal | None, not_applicable: bool) -> str:
+    if not_applicable:
+        return "not_calculable"
+    if value is not None:
+        return "filled"
+    return "pending"
+
+
+def quarter_months(quarter: int) -> list[int]:
+    if quarter < 1 or quarter > 4:
+        raise ValidationError("Trimestre deve estar entre 1 e 4.")
+    start = ((quarter - 1) * 3) + 1
+    return [start, start + 1, start + 2]
+
+
+def quarter_for_month(month: int) -> int:
+    ensure_month(month)
+    return ((month - 1) // 3) + 1
+
+
+def current_quarter_for_year(year: int, today: date | None = None) -> int:
+    today = today or date.today()
+    if year < today.year:
+        return 4
+    if year > today.year:
+        return 1
+    return quarter_for_month(today.month)
+
+
+def last_closed_quarter_for_year(year: int, today: date | None = None) -> int | None:
+    today = today or date.today()
+    if year < today.year:
+        return 4
+    if year > today.year:
         return None
-    return weighted_total / total_days
+    current = quarter_for_month(today.month)
+    if current == 1:
+        return None
+    return current - 1
+
+
+def month_names_for_observation(month_numbers: list[int]) -> str:
+    names = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+    return ", ".join(names[month - 1] for month in month_numbers)
+
+
+def build_quarter_summary(
+    quarter: int,
+    aggregation_type: AggregationType,
+    month_values: Iterable[tuple[int, Decimal | None, Decimal | None, str]],
+    annual_target: Decimal | None,
+    is_closed: bool,
+) -> dict[str, object]:
+    months = quarter_months(quarter)
+    collected = list(month_values)
+    not_calculable_months = [month for month, _, _, status in collected if status == "not_calculable"]
+    pending_months = [month for month, _, _, status in collected if status == "pending"]
+    filled_values = [
+        (month, value)
+        for month, value, _, status in collected
+        if status == "filled" and value is not None
+    ]
+    target_values = [
+        (month, target)
+        for month, _, target, status in collected
+        if status != "not_calculable" and target is not None
+    ]
+    expected_count = len(months) - len(not_calculable_months)
+    filled_count = len(filled_values)
+    completeness = (
+        None
+        if expected_count == 0
+        else (Decimal(filled_count) / Decimal(expected_count)) * Decimal("100")
+    )
+    completeness_label = "N/A" if completeness is None else f"{completeness.quantize(Decimal('1'))}%"
+    parts = [f"Completude: {completeness_label}"]
+    if not_calculable_months:
+        parts.append(f"Nao Calculavel: {month_names_for_observation(not_calculable_months)}")
+    if pending_months:
+        parts.append(f"Pendente: {month_names_for_observation(pending_months)}")
+    if not pending_months and not not_calculable_months:
+        parts.append("Nenhuma pendencia identificada")
+    return {
+        "quarter": quarter,
+        "label": f"T{quarter}",
+        "months": months,
+        "value": calculate_period_value(filled_values, aggregation_type),
+        "target": calculate_period_value(target_values, aggregation_type),
+        "annual_target": annual_target,
+        "completeness_percent": completeness,
+        "filled_count": filled_count,
+        "expected_count": expected_count,
+        "not_calculable_months": not_calculable_months,
+        "pending_months": pending_months,
+        "analysis": f"Consolidado calculado com {filled_count} de {expected_count} meses disponiveis.",
+        "observation": " | ".join(parts),
+        "is_closed": is_closed,
+    }

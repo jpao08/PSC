@@ -25,6 +25,7 @@ class CreateIndicator:
         description: str | None,
         aggregation_type: str,
         unit_id: str,
+        formula: str | None = None,
         maturity_level: Decimal | None = None,
     ) -> Indicator:
         ensure_user_active(user)
@@ -45,6 +46,7 @@ class CreateIndicator:
                 area_id=ensure_required_text(area_id, "area"),
                 name=clean_name,
                 description=description.strip() if description else None,
+                formula=formula.strip() if formula else None,
                 aggregation_type=aggregation_type,
                 unit_id=clean_unit_id,
                 maturity_level=ensure_maturity_level(maturity_level),

@@ -420,12 +420,30 @@ class SupabaseIndicatorRepository(IndicatorRepositoryPort):
             on_conflict="indicator_id,year,month,week_number",
         ).execute()
 
+    def delete_weekly_value(
+        self,
+        indicator_id: str,
+        year: int,
+        month: int,
+        week_number: int,
+    ) -> None:
+        (
+            self.client.table("indicator_values")
+            .delete()
+            .eq("indicator_id", indicator_id)
+            .eq("year", year)
+            .eq("month", month)
+            .eq("week_number", week_number)
+            .execute()
+        )
+
     def create_indicator(self, indicator: NewIndicator) -> Indicator:
         unit = self.get_unit_by_id(indicator.unit_id)
         payload = {
             "area_id": indicator.area_id,
             "name": indicator.name,
             "description": indicator.description,
+            "formula": indicator.formula,
             "aggregation_type": indicator.aggregation_type,
             "unit_id": indicator.unit_id,
             "unit": unit.label if unit is not None else None,
@@ -449,6 +467,7 @@ class SupabaseIndicatorRepository(IndicatorRepositoryPort):
             "area_id": indicator.area_id,
             "name": indicator.name,
             "description": indicator.description,
+            "formula": indicator.formula,
             "aggregation_type": indicator.aggregation_type,
             "unit_id": indicator.unit_id,
             "unit": unit.label if unit is not None else None,
@@ -821,6 +840,7 @@ class SupabaseIndicatorRepository(IndicatorRepositoryPort):
             area_hex_color=area.hex_color if area else None,
             name=str(row["name"]),
             description=str(row["description"]) if row.get("description") else None,
+            formula=str(row["formula"]) if row.get("formula") else None,
             aggregation_type=str(row["aggregation_type"]),
             unit_id=str(row["unit_id"]) if row.get("unit_id") else None,
             unit=(unit.label if unit else (str(row["unit"]) if row.get("unit") else None)),

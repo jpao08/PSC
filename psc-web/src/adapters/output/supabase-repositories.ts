@@ -4,12 +4,22 @@ import {
   AggregationType,
   Area,
   BitrixUser,
+  CommercialDrilldownDashboard,
+  CommercialDrilldownItemsPage,
+  CommercialSyncStartResult,
+  FinancialDrilldownDashboard,
+  FinancialDrilldownRow,
   Indicator,
   IndicatorTableRow,
   IndicatorUnit,
   IndicatorValue,
   IssueReport,
   IssueTag,
+  MarketingDrilldownDashboard,
+  MarketingDrilldownItem,
+  MarketingDrilldownItemsPage,
+  MarketingDrilldownMetric,
+  MarketingDrilldownRow,
   User,
   WinReport,
   WinTag
@@ -17,20 +27,29 @@ import {
 import {
   ActionPlanRepositoryPort,
   AdminUserPayload,
+  CommercialDrilldownRepositoryPort,
+  FinancialDrilldownRepositoryPort,
   IndicatorRepositoryPort,
   IssueReportRepositoryPort,
+  MarketingDrilldownRepositoryPort,
   UserRepositoryPort,
   WinReportRepositoryPort
 } from "@/core/ports/repositories";
 import {
+  buildQuarterSummary,
   calculateAchievementPercent,
   calculateAnnualValue,
   calculateMonthlyValue,
   classifyPerformance,
+  getCurrentQuarterForYear,
+  getIndicatorTypeLabel,
+  getLastClosedQuarterForYear,
+  getQuarterMonths,
   getUserAreaIds
 } from "@/core/domain/rules";
 
 type Row = Record<string, unknown>;
+const defaultBitrixPortalDomain = "tdsustentavel.bitrix24.com.br";
 
 function asString(value: unknown): string {
   return String(value ?? "");
@@ -44,6 +63,394 @@ function asNumber(value: unknown): number | null {
   if (value == null || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+export class SupabaseCommercialDrilldownRepository implements CommercialDrilldownRepositoryPort {
+  constructor(private readonly client: SupabaseClient) {}
+
+  async getDashboard(year: number): Promise<CommercialDrilldownDashboard> {
+    const { data, error } = await this.client.rpc("get_commercial_drilldown_dashboard", {
+      target_year: year
+    });
+    if (error) throw error;
+    return data as CommercialDrilldownDashboard;
+  }
+
+  async getItems(input: {
+    year: number;
+    month: number;
+    metricKey: string;
+    responsibleId: string | null;
+    query: string | null;
+    page: number;
+    pageSize: number;
+    sort: string;
+  }): Promise<CommercialDrilldownItemsPage> {
+    const { data, error } = await this.client.rpc("get_commercial_drilldown_items", {
+      target_year: input.year,
+      target_month: input.month,
+      target_metric_key: input.metricKey,
+      target_responsible_id: input.responsibleId,
+      q: input.query,
+      page: input.page,
+      page_size: input.pageSize,
+      sort: input.sort
+    });
+    if (error) throw error;
+    return data as CommercialDrilldownItemsPage;
+  }
+
+  async startSync(triggeredByUserId: string): Promise<CommercialSyncStartResult> {
+    const { data, error } = await this.client.rpc("start_commercial_sync", {
+      triggered_by_user_id: triggeredByUserId
+    });
+    if (error) throw error;
+    return data as CommercialSyncStartResult;
+  }
+
+  async getSyncStatus(): Promise<Pick<CommercialDrilldownDashboard, "lastSuccessfulSyncAt" | "activeJob">> {
+    const { data, error } = await this.client.rpc("get_commercial_sync_status");
+    if (error) throw error;
+    return data as Pick<CommercialDrilldownDashboard, "lastSuccessfulSyncAt" | "activeJob">;
+  }
+}
+
+export class SupabaseFinancialDrilldownRepository implements FinancialDrilldownRepositoryPort {
+  constructor(private readonly client: SupabaseClient) {}
+
+  async getDashboard(year: number): Promise<FinancialDrilldownDashboard> {
+    const [unitsResult, indicatorsResult, valuesResult] = await Promise.all([
+      this.client
+        .from("units")
+        .select("*")
+        .eq("is_active", true)
+        .order("name"),
+      this.client
+        .from("financial_indicators")
+        .select("*")
+        .eq("is_active", true)
+        .order("display_order")
+        .order("name"),
+      this.client
+        .from("financial_indicator_values")
+        .select("*")
+        .gte("reference_month", `${year}-01-01`)
+        .lte("reference_month", `${year}-12-01`)
+    ]);
+    if (unitsResult.error) throw unitsResult.error;
+    if (indicatorsResult.error) throw indicatorsResult.error;
+    if (valuesResult.error) throw valuesResult.error;
+
+    const units = (unitsResult.data ?? []).map((row) => ({
+      id: asString(row.id),
+      name: asString(row.name),
+      bitrixSpaItemId: asString(row.bitrix_spa_item_id),
+      bitrixEntityTypeId: Number(row.bitrix_entity_type_id ?? 1070),
+      bitrixCategoryId: Number(row.bitrix_category_id ?? 0),
+      isActive: Boolean(row.is_active ?? true),
+      lastSyncedAt: asNullableString(row.last_synced_at)
+    }));
+    const indicators = (indicatorsResult.data ?? []).map((row) => ({
+      id: asString(row.id),
+      name: asString(row.name),
+      description: asNullableString(row.description),
+      valueType: asString(row.value_type) as FinancialDrilldownDashboard["indicators"][number]["valueType"],
+      aggregationType: asString(row.aggregation_type) as FinancialDrilldownDashboard["indicators"][number]["aggregationType"],
+      displayOrder: Number(row.display_order ?? 0),
+      isActive: Boolean(row.is_active ?? true)
+    }));
+    const valueMap = new Map<string, number | null>();
+    for (const row of valuesResult.data ?? []) {
+      const month = Number(String(row.reference_month ?? "").slice(5, 7));
+      valueMap.set(
+        `${asString(row.financial_indicator_id)}|${asString(row.unit_id)}|${month}`,
+        asNumber(row.value)
+      );
+    }
+
+    const tables = indicators.map((indicator) => {
+      const rows: FinancialDrilldownRow[] = units.map((unit) => {
+        const monthValues = Object.fromEntries(
+          Array.from({ length: 12 }, (_, index) => {
+            const month = index + 1;
+            return [String(month), valueMap.get(`${indicator.id}|${unit.id}|${month}`) ?? null];
+          })
+        );
+        return {
+          unitId: unit.id,
+          unitName: unit.name,
+          isTotal: false,
+          months: monthValues,
+          periodTotal: sumNullable(Object.values(monthValues))
+        };
+      });
+      const totalMonths = Object.fromEntries(
+        Array.from({ length: 12 }, (_, index) => {
+          const month = index + 1;
+          return [String(month), sumNullable(rows.map((row) => row.months[String(month)]))];
+        })
+      );
+      return {
+        indicator,
+        rows: [
+          ...rows,
+          {
+            unitId: null,
+            unitName: "Total",
+            isTotal: true,
+            months: totalMonths,
+            periodTotal: sumNullable(Object.values(totalMonths))
+          }
+        ]
+      };
+    });
+
+    return {
+      year,
+      months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      units,
+      indicators,
+      tables
+    };
+  }
+
+  async upsertValue(input: {
+    financialIndicatorId: string;
+    unitId: string;
+    year: number;
+    month: number;
+    value: number | null;
+    userId: string;
+  }): Promise<void> {
+    const referenceMonth = `${input.year}-${String(input.month).padStart(2, "0")}-01`;
+    const { error } = await this.client.from("financial_indicator_values").upsert(
+      {
+        financial_indicator_id: input.financialIndicatorId,
+        unit_id: input.unitId,
+        reference_month: referenceMonth,
+        value: input.value,
+        updated_by: input.userId,
+        created_by: input.userId
+      },
+      { onConflict: "financial_indicator_id,unit_id,reference_month" }
+    );
+    if (error) throw error;
+  }
+}
+
+function sumNullable(values: Array<number | null | undefined>): number | null {
+  let hasValue = false;
+  let total = 0;
+  for (const value of values) {
+    if (value == null || Number.isNaN(value)) continue;
+    hasValue = true;
+    total += value;
+  }
+  return hasValue ? total : null;
+}
+
+const defaultMarketingMetrics: Array<Pick<MarketingDrilldownMetric, "metricKey" | "label" | "indicatorName" | "kind" | "unit">> = [
+  { metricKey: "leads_generated", label: "Leads Gerados", indicatorName: "Leads Gerados", kind: "flow", unit: "quantity" },
+  { metricKey: "conversion_rate", label: "Taxa de Conversao", indicatorName: "Taxa de Conversao", kind: "ratio", unit: "percentage" },
+  { metricKey: "scheduled_meetings", label: "Reunioes Agendadas", indicatorName: "Reunioes Agendadas", kind: "flow", unit: "quantity" }
+];
+
+function ratioPercent(numerator: number | null, denominator: number | null): number | null {
+  if (numerator == null || denominator == null || denominator <= 0) return null;
+  return (numerator / denominator) * 100;
+}
+
+function normalizeIndicatorName(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .trim();
+}
+
+export class SupabaseMarketingDrilldownRepository implements MarketingDrilldownRepositoryPort {
+  constructor(private readonly client: SupabaseClient) {}
+
+  async getDashboard(year: number): Promise<MarketingDrilldownDashboard> {
+    const [metrics, monthlyResult, status] = await Promise.all([
+      this.listMetricCatalog(),
+      this.client.from("marketing_drilldown_monthly").select("*").eq("reference_year", year),
+      this.getSyncStatus()
+    ]);
+    if (monthlyResult.error) throw monthlyResult.error;
+    const monthlyRows = monthlyResult.data ?? [];
+    const channels = [...new Set(monthlyRows.map((row) => asString(row.channel) || "Outros"))].sort((left, right) => left.localeCompare(right));
+
+    return {
+      year,
+      months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      channels,
+      metrics: metrics.map((metric) => this.buildMetric(metric, monthlyRows, channels)),
+      ...status
+    };
+  }
+
+  async getItems(input: {
+    year: number;
+    month: number;
+    metricKey: string;
+    channel: string | null;
+    query: string | null;
+    page: number;
+    pageSize: number;
+    sort: string;
+  }): Promise<MarketingDrilldownItemsPage> {
+    const from = (input.page - 1) * input.pageSize;
+    const to = from + input.pageSize - 1;
+    let query = this.client
+      .from("marketing_drilldown_items")
+      .select("*, bitrix_marketing_deals(title)", { count: "exact" })
+      .eq("reference_year", input.year)
+      .eq("reference_month", input.month)
+      .eq("metric_key", input.metricKey);
+    if (input.channel) query = query.eq("channel", input.channel);
+    if (input.query?.trim()) query = query.ilike("bitrix_deal_id", `%${input.query.trim()}%`);
+    query = query.order(input.sort === "date_asc" ? "event_date" : "event_date", { ascending: input.sort === "date_asc", nullsFirst: false }).range(from, to);
+    const { data, error, count } = await query;
+    if (error) throw error;
+    const rows = data ?? [];
+    const stageIds = [...new Set(rows.map((row) => asString(row.stage_id)).filter(Boolean))];
+    const stageNames = await this.listStageNames(stageIds);
+    return {
+      year: input.year,
+      month: input.month,
+      metricKey: input.metricKey,
+      channel: input.channel,
+      page: input.page,
+      pageSize: input.pageSize,
+      totalItems: count ?? rows.length,
+      items: rows.map((row) => this.toMarketingItem(row, stageNames))
+    };
+  }
+
+  async startSync(triggeredByUserId: string): Promise<CommercialSyncStartResult> {
+    const { data, error } = await this.client.rpc("start_marketing_sync", { triggered_by_user_id: triggeredByUserId });
+    if (error) throw error;
+    return data as CommercialSyncStartResult;
+  }
+
+  async getSyncStatus(): Promise<Pick<MarketingDrilldownDashboard, "lastSuccessfulSyncAt" | "activeJob">> {
+    const { data, error } = await this.client.rpc("get_marketing_sync_status");
+    if (error) return { lastSuccessfulSyncAt: null, activeJob: null };
+    return data as Pick<MarketingDrilldownDashboard, "lastSuccessfulSyncAt" | "activeJob">;
+  }
+
+  private async listMetricCatalog(): Promise<Array<Pick<MarketingDrilldownMetric, "metricKey" | "label" | "indicatorName" | "kind" | "unit">>> {
+    const { data, error } = await this.client
+      .from("marketing_drilldown_config")
+      .select("config_value")
+      .eq("config_key", "metrics")
+      .limit(1);
+    if (error || !data?.[0]?.config_value) return defaultMarketingMetrics;
+    const rows = Array.isArray(data[0].config_value) ? data[0].config_value : [];
+    return rows.map((row: Row) => ({
+      metricKey: asString(row.metricKey),
+      label: asString(row.label),
+      indicatorName: asString(row.indicatorName ?? row.label),
+      kind: (asString(row.kind) === "ratio" ? "ratio" : "flow") as MarketingDrilldownMetric["kind"],
+      unit: (asString(row.unit) === "percentage" ? "percentage" : "quantity") as MarketingDrilldownMetric["unit"]
+    })).filter((row) => row.metricKey && row.label);
+  }
+
+  private buildMetric(
+    metric: Pick<MarketingDrilldownMetric, "metricKey" | "label" | "indicatorName" | "kind" | "unit">,
+    monthlyRows: Row[],
+    channels: string[]
+  ): MarketingDrilldownMetric {
+    const rows: MarketingDrilldownRow[] = channels.map((channel) => {
+      const channelRows = monthlyRows.filter((row) => asString(row.metric_key) === metric.metricKey && (asString(row.channel) || "Outros") === channel);
+      const months = Object.fromEntries(Array.from({ length: 12 }, (_, index) => {
+        const month = index + 1;
+        const row = channelRows.find((item) => Number(item.reference_month) === month);
+        return [String(month), metric.kind === "ratio" ? asNumber(row?.percentage_value) : asNumber(row?.quantity_value)];
+      }));
+      const numeratorMonths = Object.fromEntries(Array.from({ length: 12 }, (_, index) => {
+        const month = index + 1;
+        const row = channelRows.find((item) => Number(item.reference_month) === month);
+        return [String(month), asNumber(row?.numerator_value)];
+      }));
+      const denominatorMonths = Object.fromEntries(Array.from({ length: 12 }, (_, index) => {
+        const month = index + 1;
+        const row = channelRows.find((item) => Number(item.reference_month) === month);
+        return [String(month), asNumber(row?.denominator_value)];
+      }));
+      return {
+        channel,
+        isTotal: false,
+        months,
+        numeratorMonths,
+        denominatorMonths,
+        annualSummary: metric.kind === "ratio"
+          ? ratioPercent(sumNullable(Object.values(numeratorMonths)), sumNullable(Object.values(denominatorMonths)))
+          : sumNullable(Object.values(months))
+      };
+    });
+    const totalNumeratorMonths = Object.fromEntries(Array.from({ length: 12 }, (_, index) => {
+      const month = index + 1;
+      return [String(month), sumNullable(rows.map((row) => row.numeratorMonths[String(month)]))];
+    }));
+    const totalDenominatorMonths = Object.fromEntries(Array.from({ length: 12 }, (_, index) => {
+      const month = index + 1;
+      return [String(month), sumNullable(rows.map((row) => row.denominatorMonths[String(month)]))];
+    }));
+    const totalMonths = Object.fromEntries(Array.from({ length: 12 }, (_, index) => {
+      const month = index + 1;
+      return [
+        String(month),
+        metric.kind === "ratio"
+          ? ratioPercent(totalNumeratorMonths[String(month)], totalDenominatorMonths[String(month)])
+          : sumNullable(rows.map((row) => row.months[String(month)]))
+      ];
+    }));
+    return {
+      ...metric,
+      summaryLabel: metric.kind === "ratio" ? "Taxa Anual" : "Total",
+      rows: [
+        ...rows,
+        {
+          channel: "Total",
+          isTotal: true,
+          months: totalMonths,
+          numeratorMonths: totalNumeratorMonths,
+          denominatorMonths: totalDenominatorMonths,
+          annualSummary: metric.kind === "ratio"
+            ? ratioPercent(sumNullable(Object.values(totalNumeratorMonths)), sumNullable(Object.values(totalDenominatorMonths)))
+            : sumNullable(Object.values(totalMonths))
+        }
+      ]
+    };
+  }
+
+  private async listStageNames(stageIds: string[]): Promise<Map<string, string>> {
+    if (stageIds.length === 0) return new Map();
+    const { data, error } = await this.client.from("bitrix_crm_stages").select("stage_id,name").in("stage_id", stageIds);
+    if (error) return new Map();
+    return new Map((data ?? []).map((row) => [asString(row.stage_id), asString(row.name)]));
+  }
+
+  private toMarketingItem(row: Row, stageNames: Map<string, string>): MarketingDrilldownItem {
+    const deal = row.bitrix_marketing_deals as Row | null | undefined;
+    const stageId = asNullableString(row.stage_id);
+    const dealId = asString(row.bitrix_deal_id);
+    return {
+      dealId,
+      title: asNullableString(deal?.title),
+      categoryId: Number(row.category_id ?? 0),
+      channel: asString(row.channel) || "Outros",
+      stageId,
+      stageName: stageId ? stageNames.get(stageId) ?? null : null,
+      eventDate: asNullableString(row.event_date),
+      quantityContribution: asNumber(row.quantity_contribution),
+      numeratorContribution: asNumber(row.numerator_contribution),
+      denominatorContribution: asNumber(row.denominator_contribution),
+      bitrixUrl: dealId ? `https://tdsustentavel.bitrix24.com.br/crm/deal/details/${dealId}/` : null
+    };
+  }
 }
 
 export class SupabaseUserRepository implements UserRepositoryPort {
@@ -80,7 +487,8 @@ export class SupabaseUserRepository implements UserRepositoryPort {
   }
 
   async upsertFromBitrix(payload: AdminUserPayload): Promise<User> {
-    const existingByIdentity = await this.getByBitrixIdentity(payload.bitrixUser.id, payload.bitrixUser.portalDomain ?? null);
+    const portalDomain = payload.bitrixUser.portalDomain ?? defaultBitrixPortalDomain;
+    const existingByIdentity = await this.getByBitrixIdentity(payload.bitrixUser.id, portalDomain);
     const existingByEmail = payload.bitrixUser.email
       ? await this.listByNormalizedEmail(payload.bitrixUser.email)
       : [];
@@ -92,7 +500,7 @@ export class SupabaseUserRepository implements UserRepositoryPort {
     const areaIds = [...new Set(payload.areaIds.filter(Boolean))];
     const userPayload = {
       bitrix_user_id: payload.bitrixUser.id,
-      bitrix_portal_domain: payload.bitrixUser.portalDomain ?? null,
+      bitrix_portal_domain: portalDomain,
       email: payload.bitrixUser.email ?? `${payload.bitrixUser.id}@bitrix.local`,
       name: payload.bitrixUser.name,
       role: payload.role,
@@ -102,6 +510,10 @@ export class SupabaseUserRepository implements UserRepositoryPort {
       can_edit_indicator_maturity: payload.canEditIndicatorMaturity,
       can_use_issue_reports: payload.canUseIssueReports,
       can_admin_users: payload.canAdminUsers,
+      can_view_commercial_drilldown: payload.canViewCommercialDrilldown,
+      can_view_marketing_drilldown: payload.canViewMarketingDrilldown,
+      can_view_financial_drilldown: payload.canViewFinancialDrilldown || payload.canEditFinancialDrilldown,
+      can_edit_financial_drilldown: payload.canEditFinancialDrilldown,
       password_hash: ""
     };
 
@@ -152,6 +564,10 @@ export class SupabaseUserRepository implements UserRepositoryPort {
       canEditIndicatorMaturity: Boolean(row.can_edit_indicator_maturity ?? false),
       canUseIssueReports: Boolean(row.can_use_issue_reports ?? false),
       canAdminUsers: Boolean(row.can_admin_users ?? false),
+      canViewCommercialDrilldown: Boolean(row.can_view_commercial_drilldown ?? false),
+      canViewMarketingDrilldown: Boolean(row.can_view_marketing_drilldown ?? false),
+      canViewFinancialDrilldown: Boolean(row.can_view_financial_drilldown ?? false),
+      canEditFinancialDrilldown: Boolean(row.can_edit_financial_drilldown ?? false),
       bitrixUserId: asNullableString(row.bitrix_user_id),
       bitrixPortalDomain: asNullableString(row.bitrix_portal_domain)
     };
@@ -239,6 +655,7 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
     areaId: string;
     name: string;
     description: string | null;
+    formula: string | null;
     aggregationType: AggregationType;
     unitId: string;
     maturityLevel: number | null;
@@ -251,6 +668,7 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
         area_id: input.areaId,
         name: input.name,
         description: input.description,
+        formula: input.formula,
         aggregation_type: input.aggregationType,
         unit_id: input.unitId,
         unit: unit?.label ?? null,
@@ -268,6 +686,7 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
     areaId: string;
     name: string;
     description: string | null;
+    formula: string | null;
     aggregationType: AggregationType;
     unitId: string;
     maturityLevel: number | null;
@@ -279,6 +698,7 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
         area_id: input.areaId,
         name: input.name,
         description: input.description,
+        formula: input.formula,
         aggregation_type: input.aggregationType,
         unit_id: input.unitId,
         unit: unit?.label ?? null,
@@ -355,6 +775,27 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
       },
       { onConflict: "indicator_id,year,month,week_number" }
     );
+    if (error) throw error;
+  }
+
+  async deleteWeeklyValue(indicatorId: string, year: number, month: number, weekNumber: number): Promise<void> {
+    const { error } = await this.client
+      .from("indicator_values")
+      .delete()
+      .eq("indicator_id", indicatorId)
+      .eq("year", year)
+      .eq("month", month)
+      .eq("week_number", weekNumber);
+    if (error) throw error;
+  }
+
+  async deleteWeeklyValuesForMonth(indicatorId: string, year: number, month: number): Promise<void> {
+    const { error } = await this.client
+      .from("indicator_values")
+      .delete()
+      .eq("indicator_id", indicatorId)
+      .eq("year", year)
+      .eq("month", month);
     if (error) throw error;
   }
 
@@ -495,25 +936,42 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
         const months = Array.from({ length: 12 }, (_, index) => {
           const month = index + 1;
           const isNotApplicable = notApplicable.some((item) => item.indicatorId === indicator.id && item.month === month);
-          const monthlyValue = isNotApplicable
-            ? null
-            : calculateMonthlyValue(
-                values.filter((item) => item.indicatorId === indicator.id && item.month === month),
-                indicator.aggregationType,
-                year,
-                month
-              );
+          const manualValues = values.filter((item) => item.indicatorId === indicator.id && item.month === month);
+          const manualValue = calculateMonthlyValue(manualValues, indicator.aggregationType, year, month);
+          const monthlyValue = isNotApplicable ? null : manualValue;
+          const valueSource: IndicatorTableRow["months"][number]["valueSource"] = isNotApplicable
+            ? "not_applicable"
+            : manualValues.length > 0
+              ? "manual"
+              : "empty";
           const monthlyTarget = targets.find((item) => item.indicatorId === indicator.id && item.month === month)?.targetValue ?? null;
           const projectedValue = projections.find((item) => item.indicatorId === indicator.id && item.month === month)?.projectedValue ?? null;
+          const status = isNotApplicable ? "not_calculable" as const : monthlyValue != null ? "filled" as const : "pending" as const;
           return {
             month,
             value: monthlyValue,
+            valueSource,
+            financialDrilldownValue: null,
+            marketingDrilldownValue: null,
             projectedValue,
             monthlyTarget,
+            status,
             notApplicable: isNotApplicable,
             belowTarget: !isNotApplicable && monthlyValue != null && monthlyTarget != null && monthlyValue < monthlyTarget
           };
         });
+        const currentQuarter = getCurrentQuarterForYear(year);
+        const lastClosedQuarter = getLastClosedQuarterForYear(year);
+        const buildSummary = (quarter: 1 | 2 | 3 | 4, isClosed: boolean) =>
+          buildQuarterSummary({
+            quarter,
+            aggregationType: indicator.aggregationType,
+            monthValues: months
+              .filter((item) => getQuarterMonths(quarter).includes(item.month))
+              .map((item) => ({ month: item.month, value: item.value, target: item.monthlyTarget, status: item.status })),
+            annualTarget: planning?.annualTarget ?? null,
+            isClosed
+          });
         const annualReal = calculateAnnualValue(
           months.filter((item) => item.value != null).map((item) => ({ month: item.month, value: item.value as number })),
           indicator.aggregationType
@@ -532,7 +990,9 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
           areaName: indicator.areaName,
           areaHexColor: indicator.areaHexColor,
           description: indicator.description,
+          formula: indicator.formula,
           aggregationType: indicator.aggregationType,
+          indicatorTypeLabel: getIndicatorTypeLabel(indicator.aggregationType),
           unitId: indicator.unitId,
           unit: indicator.unit,
           maturityLevel: indicator.maturityLevel,
@@ -544,6 +1004,10 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
           maturityClassification: classifyPerformance(indicator.maturityLevel),
           confidenceClassification: classifyPerformance(planning?.confidenceLevel ?? null),
           projectedAchievementClassification: classifyPerformance(projectedAchievementPercent),
+          consolidation: {
+            lastClosedQuarter: lastClosedQuarter ? buildSummary(lastClosedQuarter, true) : null,
+            currentQuarter: buildSummary(currentQuarter, false)
+          },
           months
         };
       })
@@ -560,6 +1024,7 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
       areaHexColor: asNullableString(areas?.hex_color),
       name: asString(row.name),
       description: asNullableString(row.description),
+      formula: asNullableString(row.formula),
       aggregationType: asString(row.aggregation_type) as Indicator["aggregationType"],
       unitId: asNullableString(row.unit_id),
       unit: asNullableString(unit?.label ?? row.unit),

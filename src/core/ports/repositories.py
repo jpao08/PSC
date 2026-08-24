@@ -55,6 +55,15 @@ class IndicatorRepositoryPort(Protocol):
     def upsert_weekly_value(self, value: IndicatorValue) -> None:
         ...
 
+    def delete_weekly_value(
+        self,
+        indicator_id: str,
+        year: int,
+        month: int,
+        week_number: int,
+    ) -> None:
+        ...
+
     def create_indicator(self, indicator: NewIndicator) -> Indicator:
         ...
 

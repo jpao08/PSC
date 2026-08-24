@@ -148,6 +148,18 @@ function formatIndicatorDisplayName(row) {
   return `${row.indicator_name} [${unit}]`;
 }
 
+function aggregationLabel(value) {
+  if (value === "sum") return "Fluxo";
+  if (value === "latest") return "Posicao";
+  return "Proporcional";
+}
+
+function monthStatusLabel(value) {
+  if (value === "not_calculable") return "N/A";
+  if (value === "filled") return "Preenchido";
+  return "Pendente";
+}
+
 function hexToRgba(hex, alpha = 1) {
   if (!hex || typeof hex !== "string") {
     return null;
@@ -182,6 +194,13 @@ function buildMonthCellContent(monthItem) {
     valueNode.classList.add("below-target");
   }
   wrapper.appendChild(valueNode);
+
+  if (monthItem && monthItem.status) {
+    const statusNode = document.createElement("div");
+    statusNode.className = "month-target";
+    statusNode.textContent = monthStatusLabel(monthItem.status);
+    wrapper.appendChild(statusNode);
+  }
 
   if (monthItem && monthItem.monthly_target !== null && monthItem.monthly_target !== undefined) {
     const targetNode = document.createElement("div");
@@ -1164,7 +1183,7 @@ function renderIndicators() {
   maturityHeader.className = "sticky-col sticky-col-header sticky-col-maturity";
   headerRow.appendChild(maturityHeader);
 
-  ["Confianca", "Meta Anual", "Projetado Anual", "Real Anual"].forEach((label) => {
+  ["Tipo", "Ult. Trim. Fechado", "Trim. Vigente", "Completude", "Meta Trim.", "Confianca", "Meta Anual", "Projetado Anual", "Real Anual", "Observacao"].forEach((label) => {
     const th = document.createElement("th");
     th.textContent = label;
     headerRow.appendChild(th);
@@ -1239,6 +1258,35 @@ function renderIndicators() {
     ));
     tr.appendChild(maturityCell);
 
+    const currentQuarter = row.consolidation && row.consolidation.current_quarter;
+    const lastClosedQuarter = row.consolidation && row.consolidation.last_closed_quarter;
+
+    const typeCell = document.createElement("td");
+    typeCell.textContent = row.indicator_type_label || aggregationLabel(row.aggregation_type);
+    tr.appendChild(typeCell);
+
+    const lastClosedCell = document.createElement("td");
+    lastClosedCell.textContent = lastClosedQuarter
+      ? `${lastClosedQuarter.label}: ${formatNumber(lastClosedQuarter.value)}`
+      : "-";
+    tr.appendChild(lastClosedCell);
+
+    const currentQuarterCell = document.createElement("td");
+    currentQuarterCell.textContent = currentQuarter
+      ? `${currentQuarter.label}: ${formatNumber(currentQuarter.value)}`
+      : "-";
+    tr.appendChild(currentQuarterCell);
+
+    const completenessCell = document.createElement("td");
+    completenessCell.textContent = currentQuarter && currentQuarter.completeness_percent !== null && currentQuarter.completeness_percent !== undefined
+      ? `${formatNumber(currentQuarter.completeness_percent)}%`
+      : "-";
+    tr.appendChild(completenessCell);
+
+    const quarterTargetCell = document.createElement("td");
+    quarterTargetCell.textContent = formatNumber(currentQuarter ? currentQuarter.target : null);
+    tr.appendChild(quarterTargetCell);
+
     const confidenceCell = document.createElement("td");
     confidenceCell.appendChild(buildPerformanceBadge(
       row.confidence_level,
@@ -1275,6 +1323,10 @@ function renderIndicators() {
     annualRealCell.textContent = formatNumber(row.annual_real);
     tr.appendChild(annualRealCell);
 
+    const observationCell = document.createElement("td");
+    observationCell.textContent = currentQuarter ? currentQuarter.observation : "-";
+    tr.appendChild(observationCell);
+
     for (let month = 1; month <= 12; month += 1) {
       const monthCell = document.createElement("td");
       if (currentMonth === month) {
@@ -1306,7 +1358,7 @@ function renderIndicators() {
   if (visibleIndicators.length === 0) {
     const emptyRow = document.createElement("tr");
     const emptyCell = document.createElement("td");
-    emptyCell.colSpan = 19;
+    emptyCell.colSpan = 25;
     emptyCell.textContent = "Nenhum indicador encontrado para o filtro selecionado.";
     emptyCell.className = "muted";
     emptyRow.appendChild(emptyCell);
@@ -1500,9 +1552,6 @@ async function saveWeeklyValues() {
   let sentCount = 0;
 
   for (const input of inputs) {
-    if (!input.value) {
-      continue;
-    }
     const weekNumber = Number(input.name.replace("week-", ""));
     await api(`/api/indicators/${state.selectedIndicatorId}/weekly-values`, {
       method: "POST",
@@ -1510,7 +1559,7 @@ async function saveWeeklyValues() {
         year: state.year,
         month: state.selectedMonth,
         week_number: weekNumber,
-        value: String(input.value),
+        value: String(input.value || ""),
       }),
     });
     sentCount += 1;
@@ -1602,6 +1651,7 @@ async function openCreateIndicatorPanel(indicatorRow = null) {
     areaSelect.value = indicatorRow.area_id;
     document.getElementById("ci-name").value = indicatorRow.indicator_name || "";
     document.getElementById("ci-description").value = indicatorRow.description || "";
+    document.getElementById("ci-formula").value = indicatorRow.formula || "";
     document.getElementById("ci-aggregation").value = indicatorRow.aggregation_type || "sum";
     document.getElementById("ci-maturity-level").value = (
       indicatorRow.maturity_level === null || indicatorRow.maturity_level === undefined
@@ -1625,6 +1675,7 @@ async function submitCreateIndicator(event) {
     area_id: document.getElementById("ci-area").value,
     name: document.getElementById("ci-name").value,
     description: document.getElementById("ci-description").value || null,
+    formula: document.getElementById("ci-formula").value || null,
     aggregation_type: document.getElementById("ci-aggregation").value,
     unit_id: document.getElementById("ci-unit-id").value,
     maturity_level: document.getElementById("ci-maturity-level").value || null,

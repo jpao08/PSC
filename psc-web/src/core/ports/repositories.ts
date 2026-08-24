@@ -3,6 +3,12 @@ import {
   AggregationType,
   Area,
   BitrixUser,
+  CommercialDrilldownDashboard,
+  CommercialDrilldownItemsPage,
+  CommercialSyncStartResult,
+  FinancialDrilldownDashboard,
+  MarketingDrilldownDashboard,
+  MarketingDrilldownItemsPage,
   Indicator,
   IndicatorTableRow,
   IndicatorUnit,
@@ -24,6 +30,10 @@ export type AdminUserPayload = {
   canEditIndicatorMaturity: boolean;
   canUseIssueReports: boolean;
   canAdminUsers: boolean;
+  canViewCommercialDrilldown: boolean;
+  canViewMarketingDrilldown: boolean;
+  canViewFinancialDrilldown: boolean;
+  canEditFinancialDrilldown: boolean;
 };
 
 export interface UserRepositoryPort {
@@ -47,6 +57,7 @@ export interface IndicatorRepositoryPort {
     areaId: string;
     name: string;
     description: string | null;
+    formula: string | null;
     aggregationType: AggregationType;
     unitId: string;
     maturityLevel: number | null;
@@ -56,6 +67,7 @@ export interface IndicatorRepositoryPort {
     areaId: string;
     name: string;
     description: string | null;
+    formula: string | null;
     aggregationType: AggregationType;
     unitId: string;
     maturityLevel: number | null;
@@ -64,6 +76,8 @@ export interface IndicatorRepositoryPort {
   deleteIndicatorWithHistory(indicatorId: string): Promise<void>;
   listWeeklyValues(indicatorIds: string[], year: number, month?: number): Promise<IndicatorValue[]>;
   upsertWeeklyValue(value: IndicatorValue): Promise<void>;
+  deleteWeeklyValue(indicatorId: string, year: number, month: number, weekNumber: number): Promise<void>;
+  deleteWeeklyValuesForMonth(indicatorId: string, year: number, month: number): Promise<void>;
   listMonthTargets(indicatorIds: string[], year: number): Promise<Array<{ indicatorId: string; month: number; targetValue: number }>>;
   listMonthProjections(indicatorIds: string[], year: number): Promise<Array<{ indicatorId: string; month: number; projectedValue: number }>>;
   listMonthNotApplicable(indicatorIds: string[], year: number): Promise<Array<{ indicatorId: string; month: number }>>;
@@ -138,6 +152,50 @@ export interface WinReportRepositoryPort {
   createWinTag(name: string, color: string | null, createdBy: string): Promise<WinTag>;
   updateWinTag(tagId: string, name: string, color: string | null): Promise<WinTag>;
   deactivateWinTag(tagId: string): Promise<void>;
+}
+
+export interface CommercialDrilldownRepositoryPort {
+  getDashboard(year: number): Promise<CommercialDrilldownDashboard>;
+  getItems(input: {
+    year: number;
+    month: number;
+    metricKey: string;
+    responsibleId: string | null;
+    query: string | null;
+    page: number;
+    pageSize: number;
+    sort: string;
+  }): Promise<CommercialDrilldownItemsPage>;
+  startSync(triggeredByUserId: string): Promise<CommercialSyncStartResult>;
+  getSyncStatus(): Promise<Pick<CommercialDrilldownDashboard, "lastSuccessfulSyncAt" | "activeJob">>;
+}
+
+export interface FinancialDrilldownRepositoryPort {
+  getDashboard(year: number): Promise<FinancialDrilldownDashboard>;
+  upsertValue(input: {
+    financialIndicatorId: string;
+    unitId: string;
+    year: number;
+    month: number;
+    value: number | null;
+    userId: string;
+  }): Promise<void>;
+}
+
+export interface MarketingDrilldownRepositoryPort {
+  getDashboard(year: number): Promise<MarketingDrilldownDashboard>;
+  getItems(input: {
+    year: number;
+    month: number;
+    metricKey: string;
+    channel: string | null;
+    query: string | null;
+    page: number;
+    pageSize: number;
+    sort: string;
+  }): Promise<MarketingDrilldownItemsPage>;
+  startSync(triggeredByUserId: string): Promise<CommercialSyncStartResult>;
+  getSyncStatus(): Promise<Pick<MarketingDrilldownDashboard, "lastSuccessfulSyncAt" | "activeJob">>;
 }
 
 export interface BitrixGatewayPort {

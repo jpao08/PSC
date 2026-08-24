@@ -1,130 +1,79 @@
-# Handoff: Pacote de Contexto IA do PSC Executavel
+# Handoff: PSC
 
-Data: 2026-07-11
-Status da sessao: pronto para revisao
+Data: 2026-08-04
+Status da sessao: pronto para revisao dos Markdown
 
 ## Objetivo
 
-Refazer o pacote completo de documentos do PSC apos revisao da skill `handoff-documents`, mantendo `PSC/psc-web` fora do escopo e atualizando a pasta existente `docs/ai-context/` em lugar.
+Atualizar completamente o pacote `docs/ai-context/` para refletir o PSC como projeto completo: executavel Python legado, app Next.js `psc-web`, Supabase, Bitrix24, Drill Downs Comercial/Financeiro/Marketing, Edge Functions e crons.
 
 ## Estado Atual
 
-A pasta existente foi atualizada em:
+O projeto combina duas superficies:
 
-```text
-docs/ai-context/
-```
+- Legado/local: FastAPI + HTML estatico empacotavel com PyInstaller em `PSC.exe` e `PSC-Users-Admin.exe`.
+- Web atual: Next.js/React em `psc-web/`, com APIs server-side, dominio TypeScript e Supabase.
 
-Documentos de pacote convertidos para portugues:
+Trabalho recente importante:
 
-- `README.md`
-- `PRD.md`
-- `SERVICE-DIAGRAM.md`
-- `DATA-GLOSSARY.md`
-- `DATA-MODEL.md`
+- Marketing Drill Down foi redesenhado para CRM 95 + CRM 125, com CRM 125 como `OUTBOUND`, CRM 95 por fonte/tags e `scheduled_meetings` mantendo nome do cliente mas contando Won.
+- Comercial sync foi estabilizado com jobs escopados por `job_type = incremental` e `cycle_id` deterministico para evitar FK em `commercial_drilldown_items`.
+- Crons propostos/ajustados: Comercial `08:00`/`18:00` BRT e Marketing `08:05`/`18:05` BRT via `pg_cron` + `pg_net` + Vault.
 
-`HANDOFF.md` tambem esta em portugues, mas com foco operacional para retomada por IA.
+## Completed
 
-Escopo coberto:
+- Refeito o pacote Markdown de contexto para incluir `psc-web`.
+- Atualizado o PRD com requisitos atuais de indicadores, Issue Reports, Wins, admin, drilldowns e syncs.
+- Atualizado o diagrama de servicos com Next.js, FastAPI, Supabase, Bitrix24, Edge Functions e crons.
+- Atualizados glossario e modelo de dados com tabelas recentes e regras de Drill Down.
+- Registrados riscos de consistencia entre abas/contexto recente e filesystem verificado.
 
-- Executavel principal `PSC.exe`
-- Executavel administrativo `PSC-Users-Admin.exe`
-- Backend FastAPI em `src/`
-- UI estatica empacotada em `web/`
-- UI admin empacotada em `admin_web/`
-- PyInstaller, Supabase, Bitrix24, SQL e testes
+## Changed Files
 
-Exclusao confirmada:
+- `docs/ai-context/README.md`: escopo completo, stack e gaps.
+- `docs/ai-context/PRD.md`: requisitos e regras atualizados.
+- `docs/ai-context/SERVICE-DIAGRAM.md`: fluxos atualizados.
+- `docs/ai-context/DATA-GLOSSARY.md`: glossario atualizado.
+- `docs/ai-context/DATA-MODEL.md`: modelo atualizado.
+- `docs/ai-context/HANDOFF.md`: este resumo operacional.
 
-- `psc-web/`
+## Verification
 
-Branch observada: `main`.
+- `Get-ChildItem docs/ai-context`: confirmou documentos existentes.
+- `Get-Content psc-web/package.json`: confirmou Next.js 16, React 19, Vitest e TypeScript.
+- `rg --files psc-web/src/app/api psc-web/src/core psc-web/src/adapters`: inventariou rotas e dominio web.
+- `Get-ChildItem sql -Filter *.sql`: confirmou migrations presentes no filesystem ate `027`.
+- Nao executado: `npm run typecheck`, `npm test`, `pytest`, `ruff`, deploy Supabase ou chamadas Bitrix nesta etapa documental.
 
-## Concluido
+## Decisions and Assumptions
 
-- Inventariada a pasta existente `docs/ai-context/`.
-- Atualizados os seis arquivos existentes sem deletar/recriar a pasta.
-- Reescrito o pacote em portugues conforme nova regra da skill.
-- Mantida a exclusao de `psc-web/`.
-- Mantidos identificadores tecnicos, nomes de arquivos, rotas, tabelas e variaveis como no codigo.
-- Nao foram lidos valores reais de `.env`.
+- Decision: `docs/ai-context/` continua sendo a pasta canonica.
+- Decision: Markdown foi atualizado; exports `.html` antigos nao foram regenerados sem aprovacao.
+- Decision: documentar `psc-web` como parte do escopo atual.
+- Assumption: contexto recente da conversa sobre `032..035` e Edge Functions e valido, mas precisa ser reconciliado com arquivos salvos/commitados.
+- Assumption: crons corretos sao `psc-commercial-sync-08-18-brt` e `psc-marketing-sync-08-18-brt`.
 
-## Arquivos Alterados Nesta Etapa
+## Blockers and Risks
 
-- `docs/ai-context/README.md`: indice e orientacao em portugues.
-- `docs/ai-context/PRD.md`: PRD em portugues com RFs, RNFs, regras de negocio, fluxos, riscos e evidencias.
-- `docs/ai-context/SERVICE-DIAGRAM.md`: diagramas Mermaid com prosa em portugues.
-- `docs/ai-context/DATA-GLOSSARY.md`: glossario de dados em portugues.
-- `docs/ai-context/DATA-MODEL.md`: modelo de dados em portugues.
-- `docs/ai-context/HANDOFF.md`: handoff operacional atualizado.
+- Risco: alguns SQLs/Edge Functions recentes aparecem no contexto do IDE, mas nao no filesystem limpo desta sessao. Antes de commit/deploy, verificar `sql/028..035` e `supabase/functions/*`.
+- Risco: `CRM_import` foi identificado como endpoint legado instavel; caminho canonico recomendado para Comercial e `commercial-sync`.
+- Risco: o Comercial ainda pode demorar mais que `pg_net` em sync completa; job `completed` em `bitrix_sync_jobs` e a fonte de verdade.
+- Risco: `.env` pode ser empacotado no build PyInstaller se scripts forem usados sem `-NoEnvBundle`.
 
-## Mudancas Existentes no Worktree
+## Next Steps
 
-Antes desta atualizacao documental, o repositorio ja tinha mudancas nao commitadas em arquivos de app, testes, SQL e UI, incluindo:
+1. Confirmar no workspace real se `sql/028..035` e `supabase/functions/commercial-sync`, `marketing-sync`, `financial-units-sync` estao salvos.
+2. Rodar `npm run typecheck` e `npm test -- --run` em `PSC/psc-web`.
+3. Rodar `pytest` e `ruff check .` se for validar tambem o legado Python.
+4. Confirmar crons no Supabase:
+   `select jobid, jobname, schedule, command, active from cron.job where jobname in ('psc-commercial-sync-08-18-brt','psc-marketing-sync-08-18-brt');`
+5. Depois de aprovar Markdown, decidir se deseja exportar HTML/PDF atualizados.
 
-- `admin_web/app.js`
-- `admin_web/index.html`
-- `src/adapters/input/api_routes.py`
-- `src/adapters/output/supabase_repositories.py`
-- `src/app/wiring.py`
-- `src/core/domain/models.py`
-- `src/core/domain/rules.py`
-- `src/core/ports/repositories.py`
-- `src/core/use_cases/*`
-- `tests/*`
-- `web/app.js`
-- `web/index.html`
-- `web/styles.css`
-- `sql/*`
+## Useful Context
 
-Essas mudancas nao foram revertidas.
-
-## Verificacao Realizada
-
-- `Get-ChildItem docs/ai-context`: confirmou existencia dos arquivos antes da atualizacao.
-- `git status --short`: confirmou branch de trabalho com mudancas existentes.
-- Releitura da skill revisada `handoff-documents`.
-- Atualizacao feita diretamente nos arquivos existentes do pacote.
-
-Nao executado:
-
-- `pytest`
-- `ruff`
-- build PyInstaller
-- startup do app
-- consultas Supabase
-- chamadas Bitrix24
-
-Motivo: pedido foi refazer documentacao; essas validacoes dependem de runtime/servicos/credenciais e nao eram necessarias para a reescrita documental.
-
-## Decisoes e Assumptions
-
-- Decisao: manter `docs/ai-context/` como pasta padrao existente.
-- Decisao: atualizar arquivos em lugar, sem apagar a pasta.
-- Decisao: escrever documentos de pacote em portugues.
-- Decisao: manter `web/` e `admin_web/` no escopo porque fazem parte dos executaveis.
-- Assumption: a arvore de trabalho atual representa o estado que deve ser documentado.
-- Assumption: `sql/024` e `sql/025` sao migrations incrementais ainda nao consolidadas em `000_consolidated_schema.sql`.
-
-## Riscos e Pontos de Atencao
-
-- A documentacao e baseada em analise estatica; comportamento runtime nao foi validado nesta etapa.
-- Scripts de build empacotam `.env` por padrao se o arquivo existir; revisar risco antes de distribuir executaveis.
-- `can_admin_users` existe em migration, mas nao foi observado como mecanismo de autorizacao no admin atual.
-- Se uma pessoa editou manualmente os documentos entre a geracao anterior e esta etapa, o conteudo foi reescrito para alinhar com a nova regra de idioma.
-
-## Proximos Passos
-
-1. Revisar `PRD.md` e confirmar se o escopo em portugues esta correto.
-2. Validar se `SERVICE-DIAGRAM.md` representa corretamente os modulos executaveis.
-3. Decidir se `sql/000_consolidated_schema.sql` deve incorporar migrations `024` e `025`.
-4. Decidir se o build deve mudar para nao empacotar `.env` por padrao.
-5. Rodar `pytest` e `ruff check .` quando houver intencao de validar codigo.
-
-## Contexto Util
-
-- App principal: `python -m app.start_server --reload --env-file .env --port 8010`
-- Build principal: `powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1`
-- Admin: `psc-users-admin --env-file .env --port 8020`
-- Build admin: `powershell -ExecutionPolicy Bypass -File .\scripts\build_admin_exe.ps1`
-- Pasta de contexto: `docs/ai-context/`
+- Next dev: `cd PSC/psc-web && npm run dev`
+- Next typecheck: `cd PSC/psc-web && npm run typecheck`
+- Next tests: `cd PSC/psc-web && npm test -- --run`
+- Python app: `python -m app.start_server --reload --env-file .env --port 8010`
+- Admin local: `psc-users-admin --env-file .env --port 8020`
+- Cancelar job travado: `select cancel_running_bitrix_sync_jobs('marketing');` ou `select cancel_running_bitrix_sync_jobs('incremental');`

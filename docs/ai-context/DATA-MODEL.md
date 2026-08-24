@@ -1,15 +1,17 @@
-# Modelo de Dados: PSC Executavel
+# Modelo De Dados: PSC
 
-Data: 2026-07-11
-Escopo: aplicacao executavel PSC e modulo executavel de administracao de usuarios. `psc-web/` esta fora do escopo.
+Data: 2026-08-04
 
 ## Visao Geral
 
-O PSC usa Supabase/Postgres como persistencia principal. O dominio em Python representa os dados por dataclasses em `src/core/domain/models.py`; os adapters em `src/adapters/output/supabase_repositories.py` traduzem linhas Supabase para modelos de dominio.
+O PSC usa Supabase/Postgres como armazenamento central. O dominio existe em duas implementacoes:
 
-`sql/000_consolidated_schema.sql` e o schema consolidado para bancos novos conforme documentado ate migrations `001..023`. As migrations `024` e `025` adicionam campos de identidade Bitrix e permissao administrativa de usuario.
+- Python: `src/core/domain/models.py` e repositorios em `src/adapters/output/supabase_repositories.py`.
+- TypeScript: `psc-web/src/core/domain/models.ts`, regras em `rules.ts` e repositorios em `psc-web/src/adapters/output/supabase-repositories.ts`.
 
-## Diagrama ER
+As migrations verificadas no filesystem vao de `000` a `027`. O contexto recente da sessao inclui migrations operacionais `032..035` para jobs, Marketing, crons e estabilidade de ciclos comerciais.
+
+## Diagrama ER Principal
 
 ```mermaid
 erDiagram
@@ -18,156 +20,130 @@ erDiagram
   USERS ||--o{ USER_AREA_ACCESS : possui
   AREAS ||--o{ USER_AREA_ACCESS : concede
   AREAS ||--o{ INDICATORS : possui
-  USERS ||--o{ INDICATORS : cria
   INDICATOR_UNITS ||--o{ INDICATORS : mede
   INDICATORS ||--o{ INDICATOR_VALUES : registra
-  USERS ||--o{ INDICATOR_VALUES : informa
   INDICATOR_VALUES ||--o{ INDICATOR_VALUE_HISTORY : audita
   INDICATORS ||--o{ INDICATOR_MONTH_TARGETS : tem_meta
   INDICATORS ||--o{ INDICATOR_MONTH_PROJECTIONS : tem_projecao
   INDICATORS ||--o{ INDICATOR_MONTH_NOT_APPLICABLE : marca_na
   INDICATORS ||--o{ ACTION_PLANS : possui
-  ACTION_PLANS ||--o{ ACTION_PLAN_HISTORY : registra
   USERS ||--o{ ACTION_PLANS : cria
   USERS ||--o{ ISSUE_REPORTS : solicita
   AREAS ||--o{ ISSUE_REPORTS : classifica
-  USERS ||--o{ ISSUE_REPORTS : revisa
   ISSUE_REPORTS ||--o{ ISSUE_REPORT_TAGS : recebe
   ISSUE_TAGS ||--o{ ISSUE_REPORT_TAGS : categoriza
+  USERS ||--o{ WIN_REPORTS : solicita
+  WIN_REPORTS ||--o{ WIN_REPORT_TAGS : recebe
+  WIN_TAGS ||--o{ WIN_REPORT_TAGS : categoriza
 ```
 
-## Entidades Principais
+## Diagrama De Drill Downs
 
-### Role
+```mermaid
+erDiagram
+  BITRIX_SYNC_JOBS ||--o{ COMMERCIAL_DRILLDOWN_MONTHLY : produz
+  BITRIX_CRM_DEALS ||--o{ BITRIX_CRM_STAGE_HISTORY : possui
+  BITRIX_CRM_DEALS ||--o{ BITRIX_CRM_DEAL_CYCLES : possui
+  BITRIX_CRM_DEAL_CYCLES ||--o{ COMMERCIAL_DRILLDOWN_ITEMS : referencia
+  COMMERCIAL_DRILLDOWN_MONTHLY ||--o{ COMMERCIAL_DRILLDOWN_ITEMS : detalha
 
-- Tabela: `roles`
-- Modelo: literal `Role` em `models.py`
-- Codigos observados: `gestor_area`, `executivo`, `executivo_visualizacao`
-- Funcao: base para autorizacao.
+  BITRIX_SYNC_JOBS ||--o{ MARKETING_DRILLDOWN_MONTHLY : produz
+  BITRIX_MARKETING_DEALS ||--o{ BITRIX_MARKETING_STAGE_HISTORY : possui
+  MARKETING_DRILLDOWN_MONTHLY ||--o{ MARKETING_DRILLDOWN_ITEMS : detalha
+```
+
+## Entidades Centrais
 
 ### User
 
-- Tabela: `users`
-- Modelo: `User`
-- Campos principais: `email`, `password_hash`, `name`, `role`, `area_id`, `is_active`, `can_edit_projected_value`, `can_use_issue_reports`
-- Campos adicionados por migrations recentes: `bitrix_user_id`, `bitrix_portal_domain`, `last_login_at`, `can_admin_users`
-- Relacionamentos:
-  - `role` referencia `roles.code`
-  - `area_id` referencia opcionalmente `areas.id`
-  - multiplas areas via `user_area_access`
-- Ciclo de vida:
-  - Criado, editado e desativado pelo executavel admin.
-  - Autenticacao exige hash valido e usuario ativo.
+- Armazenamento: `users`.
+- Campos principais: `email`, `password_hash`, `name`, `role`, `area_id`, `is_active`, flags de permissao, `bitrix_user_id`, `bitrix_portal_domain`.
+- Relacionamentos: `roles`, `areas`, `user_area_access`.
+- Regras: usuario inativo nao opera; roles e flags controlam rotas.
 
 ### Area
 
-- Tabela: `areas`
-- Modelo: `Area`
-- Campos: `name`, `hex_color`, `is_active`
-- Ciclo de vida:
-  - Executivo cria, edita e desativa.
-  - Desativacao usa `is_active`, nao remocao fisica.
-
-### IndicatorUnit
-
-- Tabela: `indicator_units`
-- Modelo: `IndicatorUnit`
-- Funcao: normalizar unidade de medida exibida no indicador.
+- Armazenamento: `areas`.
+- Campos: `name`, `hex_color`, `is_active`.
+- Relacionamentos: usuarios, indicadores, reports.
+- Regras: cor `#RRGGBB`; nome ativo unico.
 
 ### Indicator
 
-- Tabela: `indicators`
-- Modelos: `Indicator`, `NewIndicator`, `IndicatorTableRow`
-- Campos: `area_id`, `name`, `description`, `aggregation_type`, `unit_id`, `unit`, `maturity_level`, `is_active`, `created_by`
-- Regras:
-  - `aggregation_type` deve ser `sum`, `avg` ou `latest`
-  - `maturity_level` deve estar entre 0 e 100 quando informado
-- Ciclo de vida:
-  - Executivo cria e edita.
-  - Delete observado remove dependencias como planos, historico, valores, metas, projecoes e marcacoes antes de excluir indicador.
+- Armazenamento: `indicators`.
+- Campos: `area_id`, `name`, `description`, `aggregation_type`, `unit_id`, `maturity_level`, `is_active`.
+- Relacionamentos: unidades, valores, metas, projecoes, N/A, planos de acao.
+- Regras: `aggregation_type` em `sum`, `avg`, `latest`; maturidade 0-100.
 
 ### IndicatorValue
 
-- Tabela: `indicator_values`
-- Modelo: `IndicatorValue`
-- Campos: `indicator_id`, `year`, `month`, `week_number`, `value`, `source_user_id`
-- Unicidade: `indicator_id + year + month + week_number`
-- Ciclo de vida:
-  - Gestor atualiza para indicadores das suas areas.
-  - Alteracao de valor existente gera `indicator_value_history`.
+- Armazenamento: `indicator_values`.
+- Chave logica: `indicator_id`, `year`, `month`, `week_number`.
+- Ciclo de vida: upsert por gestor; alteracao gera `indicator_value_history`.
 
-### IndicatorValueHistory
+### IssueReport e WinReport
 
-- Tabela: `indicator_value_history`
-- Funcao: auditar alteracoes de valores semanais.
-- Criacao: ocorre quando um upsert altera valor existente para valor diferente.
+- Armazenamento: tabelas de reports/wins e tabelas de tags.
+- Campos funcionais: titulo, area, GUT solicitante, GUT executivo, status, ocorrencia, causa, solucao.
+- Regras: GUT 1-5; executivo revisa; tags many-to-many.
 
-### Planejamento Mensal
+### Bitrix Sync Job
 
-- `indicator_month_targets`: metas mensais definidas por executivo; nao podem ser negativas.
-- `indicator_month_projections`: projecoes mensais definidas por usuarios com permissao; podem ser negativas.
-- `indicator_month_not_applicable`: marca que o mes de um indicador nao se aplica; oculta valor real mensal sem apagar meta/projecao.
+- Armazenamento: `bitrix_sync_jobs`.
+- Campos: `job_id`, `job_type`, `status`, `current_step`, `processed_records`, `total_records`, `cursor`, `error_message`, timestamps.
+- Estados: `pending`, `running`, `completed`, `failed`, `cancelled`.
+- Regra recente: indices/funcoes devem escopar jobs por `job_type` para Marketing e Comercial nao travarem um ao outro.
 
-### ActionPlan
+## Modelo Comercial
 
-- Tabelas: `action_plans`, `action_plan_history`
-- Modelos: `ActionPlan`, `NewActionPlan`, `ActionPlanHistoryEvent`
-- Campos: `indicator_id`, `title`, `ocorrencia`, `identificacao_causa`, `proposta_solucao`, `bitrix_responsible_id`, `responsible_name`, `responsible_email`, `due_date`, `bitrix_task_id`, `status`, `created_by`
-- Ciclo de vida:
-  - Executivo cria.
-  - Gateway pode criar tarefa Bitrix e salvar ID retornado.
-  - Historico registra eventos do plano.
+### Deals, History e Cycles
 
-### IssueReport
+- `bitrix_crm_deals`: estado atual dos cards comerciais.
+- `bitrix_crm_stage_history`: movimentos de stage por deal.
+- `bitrix_crm_deal_cycles`: ciclos reconstruidos.
+- `cycle_id`: deve ser estavel/deterministico por `deal_id + cycle_number`.
+- `commercial_drilldown_items.cycle_id`: FK para ciclos, com `ON UPDATE CASCADE` recomendado pelo SQL `035`.
 
-- Tabelas: `issue_reports`, `issue_tags`, `issue_report_tags`
-- Modelos: `IssueReport`, `NewIssueReport`, `IssueTag`
-- Grupos de campos:
-  - Solicitante: `requester_id`, `requester_gravity`, `requester_urgency`, `requester_tendency`, `requester_priority_score`
-  - Revisao executiva: `executive_gravity`, `executive_urgency`, `executive_tendency`, `executive_priority_score`, `reviewed_by`, `reviewed_at`
-  - Classificacao: `area_id`, `is_other_area`, `status`, tags
-  - Narrativa: `ocorrencia`, `identificacao_causa`, `proposta_solucao`
-- Ciclo de vida:
-  - Criado por executivo ou usuario com `can_use_issue_reports`.
-  - Listagem nao executiva e limitada ao solicitante.
-  - Executivo revisa, altera status/GUT, gerencia tags e faz soft delete.
+### Agregados Comerciais
 
-## Modelos de Entrada/API
+- `commercial_drilldown_monthly`: metricas mensais por responsavel.
+- `commercial_drilldown_items`: detalhe por deal/ciclo/evento.
+- Metricas observadas no codigo recente: `initial_meetings`, `presented_proposals`, `initial_pipe`, `semi_qualified_pipeline`, `qualified_pipe`, `closed_contracts`, `total_cards`.
 
-Payloads da API principal em `src/adapters/input/api_routes.py`:
+## Modelo Marketing
 
-- `LoginRequest`
-- `WeeklyValuePayload`
-- `ActionPlanPayload`
-- `CreateIndicatorPayload`
-- `UpdateIndicatorPayload`
-- `AreaPayload`
-- `MonthlyTargetPayload`
-- `MonthlyProjectionPayload`
-- `MonthlyNotApplicablePayload`
-- `CreateIssueReportPayload`
-- `IssueExecutiveReviewPayload`
-- `IssueTagPayload`
-- `IssueTagsPayload`
+- Categorias: CRM 95 como origem principal; CRM 125 como outbound.
+- `bitrix_marketing_deals`: deals materializados com canal resolvido.
+- `bitrix_marketing_stage_history`: historico relevante para Won.
+- `marketing_drilldown_monthly`: agregados por ano, mes, metrica e canal.
+- `marketing_drilldown_items`: contribuicoes por card.
+- `marketing_drilldown_config`: JSONB com CRM IDs, regras de canal, deteccao de Won e metricas.
 
-Payloads do admin em `src/admin/users_app.py`:
+Metricas:
 
-- `AdminLoginPayload`
-- `AdminUserPayload`
+- `leads_generated`: cards criados no mes.
+- `conversion_rate`: numerador = cards Won; denominador = cards criados.
+- `scheduled_meetings`: nome mantido, regra atual = cards Won.
 
-## Estados e Ciclos de Vida
+## Modelo De Persistencia E APIs
 
-- Token de auth e stateless: contem sujeito e expiracao assinados por HMAC.
-- Sessao de UI fica em `localStorage` como `psc_token` ou `psc_users_admin_token`.
-- Issue Reports usam soft delete com `is_deleted`, `deleted_at` e `deleted_by`.
-- Areas e tags sao desativadas por `is_active`.
-- Indicadores sao excluidos fisicamente apos limpeza manual de dependencias.
-- `can_admin_users` existe no schema incremental, mas nao foi observado como autorizador no app admin atual.
+| Camada | Modelo |
+|---|---|
+| Python legado | Dataclasses/modelos em `src/core/domain/models.py`; adapters Supabase traduzem linhas. |
+| Next.js | Types em `psc-web/src/core/domain/models.ts`; API routes validam e chamam repositorios. |
+| Supabase REST/RPC | Usado por app web, legado e Edge Functions com service role em ambiente servidor. |
+| Bitrix24 | Origem externa para usuarios, CRM, tarefas e auth. |
 
-## Evidencias
+## Estados E Ciclos
 
-- Dominio: `src/core/domain/models.py`
-- Regras: `src/core/domain/rules.py`
-- Persistencia: `src/adapters/output/supabase_repositories.py`
-- Admin: `src/admin/users_app.py`
-- SQL: `sql/000_consolidated_schema.sql`, `sql/022_issue_fields_na_and_viewer_role.sql`, `sql/023_issue_report_tags.sql`, `sql/024_add_bitrix_identity_to_users.sql`, `sql/025_add_user_admin_permission.sql`
+- Indicadores: ativo/inativo; mes aplicavel/N/A; metas/projecoes por mes.
+- Reports/Wins: criado, revisado, status operacional e soft delete quando aplicavel.
+- Jobs: `pending -> running -> completed|failed|cancelled`.
+- Comercial: stage history gera ciclos; ciclos alimentam itens; itens alimentam agregados.
+- Marketing: card criado alimenta lead/denominador; Won alimenta numerador e `scheduled_meetings`.
+
+## Gaps
+
+- Confirmar no repositorio salvo as migrations de Drill Down `028..035` e Edge Functions recentes.
+- Confirmar nomes finais de endpoints Supabase Functions publicados; evitar `CRM_import` legado se possivel.
+- Consolidar `000_consolidated_schema.sql` se novas migrations forem promovidas para baseline.
