@@ -128,7 +128,13 @@ class AdminUserPayload(BaseModel):
     password: str | None = None
     is_active: bool = True
     can_edit_projected_value: bool = False
+    can_edit_indicator_maturity: bool = False
     can_use_issue_reports: bool = False
+    can_admin_users: bool = False
+    can_view_commercial_drilldown: bool = False
+    can_view_marketing_drilldown: bool = False
+    can_view_financial_drilldown: bool = False
+    can_edit_financial_drilldown: bool = False
     area_ids: list[str] = Field(default_factory=list)
 
 
@@ -151,7 +157,13 @@ def _serialize_user(row: dict[str, Any], area_ids: list[str]) -> dict[str, Any]:
         "area_id": str(row["area_id"]) if row.get("area_id") else None,
         "is_active": bool(row.get("is_active", True)),
         "can_edit_projected_value": bool(row.get("can_edit_projected_value", False)),
+        "can_edit_indicator_maturity": bool(row.get("can_edit_indicator_maturity", False)),
         "can_use_issue_reports": bool(row.get("can_use_issue_reports", False)),
+        "can_admin_users": bool(row.get("can_admin_users", False)),
+        "can_view_commercial_drilldown": bool(row.get("can_view_commercial_drilldown", False)),
+        "can_view_marketing_drilldown": bool(row.get("can_view_marketing_drilldown", False)),
+        "can_view_financial_drilldown": bool(row.get("can_view_financial_drilldown", False)),
+        "can_edit_financial_drilldown": bool(row.get("can_edit_financial_drilldown", False)),
         "area_ids": area_ids,
     }
 
@@ -212,7 +224,13 @@ class AdminUserRepository:
             "area_id": area_ids[0] if area_ids else None,
             "is_active": payload.is_active,
             "can_edit_projected_value": payload.can_edit_projected_value,
+            "can_edit_indicator_maturity": payload.can_edit_indicator_maturity,
             "can_use_issue_reports": payload.can_use_issue_reports,
+            "can_admin_users": payload.can_admin_users,
+            "can_view_commercial_drilldown": payload.can_view_commercial_drilldown,
+            "can_view_marketing_drilldown": payload.can_view_marketing_drilldown,
+            "can_view_financial_drilldown": payload.can_view_financial_drilldown or payload.can_edit_financial_drilldown,
+            "can_edit_financial_drilldown": payload.can_edit_financial_drilldown,
         }
         response = self.client.table("users").insert(user_payload).execute()
         row = (response.data or [])[0]
@@ -236,7 +254,13 @@ class AdminUserRepository:
             "area_id": area_ids[0] if area_ids else None,
             "is_active": payload.is_active,
             "can_edit_projected_value": payload.can_edit_projected_value,
+            "can_edit_indicator_maturity": payload.can_edit_indicator_maturity,
             "can_use_issue_reports": payload.can_use_issue_reports,
+            "can_admin_users": payload.can_admin_users,
+            "can_view_commercial_drilldown": payload.can_view_commercial_drilldown,
+            "can_view_marketing_drilldown": payload.can_view_marketing_drilldown,
+            "can_view_financial_drilldown": payload.can_view_financial_drilldown or payload.can_edit_financial_drilldown,
+            "can_edit_financial_drilldown": payload.can_edit_financial_drilldown,
         }
         if payload.password:
             user_payload["password_hash"] = hash_password(payload.password)

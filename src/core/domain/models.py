@@ -45,7 +45,15 @@ class User:
     is_active: bool
     password_hash: str
     can_edit_projected_value: bool = False
+    can_edit_indicator_maturity: bool = False
     can_use_issue_reports: bool = False
+    can_admin_users: bool = False
+    can_view_commercial_drilldown: bool = False
+    can_view_marketing_drilldown: bool = False
+    can_view_financial_drilldown: bool = False
+    can_edit_financial_drilldown: bool = False
+    bitrix_user_id: str | None = None
+    bitrix_portal_domain: str | None = None
     area_ids: list[str] | None = None
 
 
@@ -309,3 +317,89 @@ class WinReport:
 class AuthenticatedSession:
     token: str
     user: User
+
+
+CommercialMetricKind = Literal["flow", "stock"]
+CommercialMetricUnit = Literal["quantity", "money"]
+CommercialSyncStatus = Literal["pending", "running", "completed", "failed", "cancelled"]
+
+
+@dataclass(frozen=True)
+class CommercialSyncJob:
+    job_id: str
+    job_type: str
+    status: CommercialSyncStatus
+    started_at: datetime | None
+    current_step: str | None
+    processed_records: int
+    total_records: int | None
+    created_at: datetime | None
+    updated_at: datetime | None
+
+
+@dataclass(frozen=True)
+class CommercialDrilldownRow:
+    responsible_id: str | None
+    responsible_name: str
+    responsible_active: bool
+    months: dict[str, Decimal | None]
+    annual_summary: Decimal | None
+    is_total: bool = False
+
+
+@dataclass(frozen=True)
+class CommercialDrilldownMetric:
+    metric_key: str
+    label: str
+    kind: CommercialMetricKind
+    unit: CommercialMetricUnit
+    summary_label: str
+    rows: list[CommercialDrilldownRow]
+
+
+@dataclass(frozen=True)
+class CommercialDrilldownDashboard:
+    year: int
+    months: list[int]
+    responsibles: list[dict[str, object]]
+    metrics: list[CommercialDrilldownMetric]
+    last_successful_sync_at: datetime | None
+    active_job: CommercialSyncJob | None
+
+
+@dataclass(frozen=True)
+class CommercialDrilldownItem:
+    deal_id: str
+    title: str | None
+    responsible_id: str | None
+    responsible_name: str
+    responsible_status: Literal["active", "inactive"]
+    stage_id: str | None
+    stage_name: str | None
+    event_date: datetime | None
+    reference_date: datetime | None
+    quantity_contribution: Decimal | None
+    monetary_contribution: Decimal | None
+    opportunity: Decimal | None
+    currency_id: str | None
+    bitrix_url: str | None
+
+
+@dataclass(frozen=True)
+class CommercialDrilldownItemsPage:
+    year: int
+    month: int
+    metric_key: str
+    responsible_id: str | None
+    page: int
+    page_size: int
+    total_items: int
+    items: list[CommercialDrilldownItem]
+
+
+@dataclass(frozen=True)
+class CommercialSyncStartResult:
+    job_id: str
+    status: CommercialSyncStatus
+    created: bool
+    message: str

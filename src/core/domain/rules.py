@@ -153,6 +153,41 @@ def ensure_can_use_issue_reports(user: User) -> None:
     raise AuthorizationError("Usuario sem permissao para acessar Issue Reports.")
 
 
+def ensure_can_use_commercial_drilldown(user: User) -> None:
+    ensure_user_active(user)
+    if user.role == "executivo" or user.can_view_commercial_drilldown:
+        return
+    raise AuthorizationError("Usuario sem permissao para acessar Drill Down Comercial.")
+
+
+def ensure_can_use_marketing_drilldown(user: User) -> None:
+    ensure_user_active(user)
+    if user.role == "executivo" or user.can_view_marketing_drilldown:
+        return
+    raise AuthorizationError("Usuario sem permissao para acessar Drill Down Marketing.")
+
+
+def ensure_can_view_financial_drilldown(user: User) -> None:
+    ensure_user_active(user)
+    if user.role == "executivo" or user.can_view_financial_drilldown or user.can_edit_financial_drilldown:
+        return
+    raise AuthorizationError("Usuario sem permissao para acessar Drill Down Financeiro.")
+
+
+def ensure_can_edit_financial_drilldown(user: User) -> None:
+    ensure_user_active(user)
+    if user.role == "executivo" or user.can_edit_financial_drilldown:
+        return
+    raise AuthorizationError("Usuario sem permissao para editar Drill Down Financeiro.")
+
+
+def ensure_can_start_commercial_sync(user: User) -> None:
+    ensure_user_active(user)
+    if user.role == "executivo" or user.can_admin_users:
+        return
+    raise AuthorizationError("Somente Admin pode iniciar sincronizacao comercial.")
+
+
 def ensure_issue_gut_value(value: int, field_name: str) -> int:
     if value < 1 or value > 5:
         raise ValidationError(f"Campo {field_name} deve estar entre 1 e 5.")
