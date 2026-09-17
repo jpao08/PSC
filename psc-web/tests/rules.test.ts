@@ -90,6 +90,28 @@ describe("rules", () => {
     expect(incomplete.completenessPercent).toBe(50);
   });
 
+  it("reports weekly progress for the open current month in the current quarter", () => {
+    const summary = buildQuarterSummary({
+      quarter: 3,
+      aggregationType: "sum",
+      annualTarget: null,
+      isClosed: false,
+      currentMonth: 9,
+      monthValues: [
+        { month: 7, value: 12, target: null, status: "filled", weeklyFilledCount: 4, weeklyExpectedCount: 4 },
+        { month: 8, value: null, target: null, status: "not_calculable", weeklyFilledCount: 0, weeklyExpectedCount: 4 },
+        { month: 9, value: 5, target: null, status: "filled", weeklyFilledCount: 1, weeklyExpectedCount: 4 }
+      ]
+    });
+
+    expect(summary.value).toBe(17);
+    expect(summary.filledWeeks).toBe(5);
+    expect(summary.expectedWeeks).toBe(8);
+    expect(summary.weekCompletenessPercent).toBe(62.5);
+    expect(summary.currentMonthWeekProgress).toEqual({ month: 9, filledWeeks: 1, expectedWeeks: 4 });
+    expect(summary.analysis).toContain("Mes vigente ainda aberto");
+  });
+
   it("allows managers to view indicators from their areas", () => {
     expect(() => ensureCanViewIndicator(baseUser, indicator)).not.toThrow();
     expect(() => ensureCanViewIndicator({ ...baseUser, role: "gestor_tatico" }, indicator)).not.toThrow();
