@@ -121,6 +121,8 @@ export type IndicatorTableRow = {
     projectedValue: number | null;
     monthlyTarget: number | null;
     status: MonthStatus;
+    weeklyFilledCount: number;
+    weeklyExpectedCount: number;
     notApplicable: boolean;
     belowTarget: boolean;
   }>;
@@ -136,6 +138,14 @@ export type QuarterSummary = {
   completenessPercent: number | null;
   filledCount: number;
   expectedCount: number;
+  weekCompletenessPercent: number | null;
+  filledWeeks: number;
+  expectedWeeks: number;
+  currentMonthWeekProgress: {
+    month: number;
+    filledWeeks: number;
+    expectedWeeks: number;
+  } | null;
   notCalculableMonths: number[];
   pendingMonths: number[];
   analysis: string;

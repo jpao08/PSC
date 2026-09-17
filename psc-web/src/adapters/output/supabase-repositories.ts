@@ -937,6 +937,8 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
           const month = index + 1;
           const isNotApplicable = notApplicable.some((item) => item.indicatorId === indicator.id && item.month === month);
           const manualValues = values.filter((item) => item.indicatorId === indicator.id && item.month === month);
+          const weeklyFilledCount = isNotApplicable ? 0 : manualValues.length;
+          const weeklyExpectedCount = 4;
           const manualValue = calculateMonthlyValue(manualValues, indicator.aggregationType, year, month);
           const monthlyValue = isNotApplicable ? null : manualValue;
           const valueSource: IndicatorTableRow["months"][number]["valueSource"] = isNotApplicable
@@ -956,6 +958,8 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
             projectedValue,
             monthlyTarget,
             status,
+            weeklyFilledCount,
+            weeklyExpectedCount,
             notApplicable: isNotApplicable,
             belowTarget: !isNotApplicable && monthlyValue != null && monthlyTarget != null && monthlyValue < monthlyTarget
           };
@@ -968,9 +972,17 @@ export class SupabaseIndicatorRepository implements IndicatorRepositoryPort {
             aggregationType: indicator.aggregationType,
             monthValues: months
               .filter((item) => getQuarterMonths(quarter).includes(item.month))
-              .map((item) => ({ month: item.month, value: item.value, target: item.monthlyTarget, status: item.status })),
+              .map((item) => ({
+                month: item.month,
+                value: item.value,
+                target: item.monthlyTarget,
+                status: item.status,
+                weeklyFilledCount: item.weeklyFilledCount,
+                weeklyExpectedCount: item.weeklyExpectedCount
+              })),
             annualTarget: planning?.annualTarget ?? null,
-            isClosed
+            isClosed,
+            currentMonth: year === new Date().getFullYear() ? new Date().getMonth() + 1 : null
           });
         const annualReal = calculateAnnualValue(
           months.filter((item) => item.value != null).map((item) => ({ month: item.month, value: item.value as number })),

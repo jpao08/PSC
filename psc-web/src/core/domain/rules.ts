@@ -285,9 +285,17 @@ export function resolveMonthStatus(value: number | null, notApplicable: boolean)
 export function buildQuarterSummary(input: {
   quarter: 1 | 2 | 3 | 4;
   aggregationType: AggregationType;
-  monthValues: Array<{ month: number; value: number | null; target: number | null; status: MonthStatus }>;
+  monthValues: Array<{
+    month: number;
+    value: number | null;
+    target: number | null;
+    status: MonthStatus;
+    weeklyFilledCount?: number;
+    weeklyExpectedCount?: number;
+  }>;
   annualTarget: number | null;
   isClosed: boolean;
+  currentMonth?: number | null;
 }): QuarterSummary {
   const months = getQuarterMonths(input.quarter);
   const notCalculableMonths = input.monthValues.filter((item) => item.status === "not_calculable").map((item) => item.month);
@@ -301,13 +309,50 @@ export function buildQuarterSummary(input: {
   const expectedCount = months.length - notCalculableMonths.length;
   const filledCount = filledValues.length;
   const completenessPercent = expectedCount === 0 ? null : (filledCount / expectedCount) * 100;
+  const weekTotals = input.monthValues
+    .filter((item) => item.status !== "not_calculable")
+    .reduce(
+      (total, item) => {
+        const expectedWeeks = item.weeklyExpectedCount ?? 4;
+        const filledWeeks = item.weeklyFilledCount == null
+          ? item.status === "filled" ? expectedWeeks : 0
+          : Math.min(item.weeklyFilledCount, expectedWeeks);
+        return {
+          filledWeeks: total.filledWeeks + filledWeeks,
+          expectedWeeks: total.expectedWeeks + expectedWeeks
+        };
+      },
+      { filledWeeks: 0, expectedWeeks: 0 }
+    );
+  const weekCompletenessPercent = weekTotals.expectedWeeks === 0 ? null : (weekTotals.filledWeeks / weekTotals.expectedWeeks) * 100;
+  const currentMonthWeekProgress = !input.isClosed && input.currentMonth && months.includes(input.currentMonth)
+    ? input.monthValues
+      .filter((item) => item.status !== "not_calculable")
+      .map((item) => {
+        const expectedWeeks = item.weeklyExpectedCount ?? 4;
+        const filledWeeks = item.weeklyFilledCount == null
+          ? item.status === "filled" ? expectedWeeks : 0
+          : Math.min(item.weeklyFilledCount, expectedWeeks);
+        return { month: item.month, filledWeeks, expectedWeeks };
+      })
+      .find((item) => item.month === input.currentMonth) ?? null
+    : null;
   const value = calculatePeriodValue(filledValues, input.aggregationType);
   const target = calculatePeriodValue(targetValues, input.aggregationType);
   const parts = [`Completude: ${completenessPercent == null ? "N/A" : `${Math.round(completenessPercent)}%`}`];
+  if (weekCompletenessPercent != null) {
+    parts.push(`Semanas preenchidas: ${weekTotals.filledWeeks}/${weekTotals.expectedWeeks} (${Math.round(weekCompletenessPercent)}%)`);
+  }
+  if (currentMonthWeekProgress) {
+    parts.push(`Mes vigente em andamento: ${monthNamesForObservation([currentMonthWeekProgress.month])} ${currentMonthWeekProgress.filledWeeks}/${currentMonthWeekProgress.expectedWeeks} semanas`);
+  }
   if (notCalculableMonths.length > 0) parts.push(`Nao Calculavel: ${monthNamesForObservation(notCalculableMonths)}`);
   if (pendingMonths.length > 0) parts.push(`Pendente: ${monthNamesForObservation(pendingMonths)}`);
   if (pendingMonths.length === 0 && notCalculableMonths.length === 0) parts.push("Nenhuma pendencia identificada");
-  const availability = `Consolidado calculado com ${filledCount} de ${expectedCount} meses disponiveis.`;
+  const activeMonthText = currentMonthWeekProgress
+    ? ` Mes vigente ainda aberto: ${monthNamesForObservation([currentMonthWeekProgress.month])} com ${currentMonthWeekProgress.filledWeeks} de ${currentMonthWeekProgress.expectedWeeks} semanas preenchidas.`
+    : "";
+  const availability = `${input.isClosed ? "Consolidado calculado" : "Consolidado parcial calculado"} com ${filledCount} de ${expectedCount} meses disponiveis.${activeMonthText}`;
 
   return {
     quarter: input.quarter,
@@ -319,6 +364,10 @@ export function buildQuarterSummary(input: {
     completenessPercent,
     filledCount,
     expectedCount,
+    weekCompletenessPercent,
+    filledWeeks: weekTotals.filledWeeks,
+    expectedWeeks: weekTotals.expectedWeeks,
+    currentMonthWeekProgress,
     notCalculableMonths,
     pendingMonths,
     analysis: availability,

@@ -76,8 +76,16 @@ type IssueTagFormState = {
 };
 
 type IssueSortMode = "executive" | "requester" | "date";
-type ReportTab = "indicators" | "consolidation" | "commercial" | "financial" | "marketing" | "issues" | "wins";
+type ReportTab = "indicators" | "consolidation" | "manual" | "commercial" | "financial" | "marketing" | "issues" | "wins";
 type DrilldownViewMode = "indicator" | "transposed" | "consolidated";
+
+type ManualSection = {
+  tab: string;
+  item: string;
+  purpose: string;
+  howToUse: string;
+  tableStructure: string;
+};
 
 type CommercialDrilldownSelection = {
   metric: CommercialDrilldownMetric;
@@ -93,6 +101,11 @@ type MarketingDrilldownSelection = {
   month: number;
   page: number;
   query: string;
+};
+
+type FilterOption = {
+  value: string;
+  label: string;
 };
 
 type ActionPlanFormState = {
@@ -195,12 +208,6 @@ function aggregationLabel(value: AggregationType): string {
   return "Proporcional";
 }
 
-function monthStatusLabel(value: string): string {
-  if (value === "not_calculable") return "N/A";
-  if (value === "filled") return "Preenchido";
-  return "Pendente";
-}
-
 function formatCommercialValue(value: number | null, unit: "quantity" | "money"): string {
   if (value == null || Number.isNaN(value)) return "-";
   if (unit === "money") {
@@ -213,6 +220,13 @@ function formatCommercialValue(value: number | null, unit: "quantity" | "money")
   return new Intl.NumberFormat("pt-BR", {
     maximumFractionDigits: Number.isInteger(value) ? 0 : 2
   }).format(value);
+}
+
+function formatQuarterCompleteness(summary: IndicatorTableRow["consolidation"]["currentQuarter"]): string {
+  if (!summary) return "-";
+  const monthText = summary.completenessPercent == null ? "Meses N/A" : `${Math.round(summary.completenessPercent)}% meses`;
+  const weekText = summary.weekCompletenessPercent == null ? "semanas N/A" : `${Math.round(summary.weekCompletenessPercent)}% semanas`;
+  return `${monthText} | ${weekText}`;
 }
 
 function hasCommercialValue(value: number | null | undefined): boolean {
@@ -228,11 +242,162 @@ const performanceLabels: Record<string, string> = {
   strategic: "Estrategico"
 };
 
+const userManualSections: ManualSection[] = [
+  {
+    tab: "Indicadores",
+    item: "Tabela mensal",
+    purpose: "Acompanha os indicadores por area, maturidade e meses do ano selecionado.",
+    howToUse: "Filtre por indicador ou area. Gestores editam valores semanais clicando no mes. Executivos clicam no mes para ajustar valor projetado e meta mensal.",
+    tableStructure: "Identificacao mostra Indicador, Area e Maturidade. Meses mostram Real, status, fonte, Projetado e Meta."
+  },
+  {
+    tab: "Indicadores",
+    item: "Maturidade",
+    purpose: "Mostra o nivel de confiabilidade operacional do indicador em uma escala de 0 a 100.",
+    howToUse: "Usuarios autorizados clicam na celula de maturidade para atualizar o valor.",
+    tableStructure: "Badge colorido: ate 30 nao confiavel, ate 50 fragil, ate 70 funcional, ate 90 confiavel, acima de 90 estrategico."
+  },
+  {
+    tab: "Consolidacao",
+    item: "Consolidado anual",
+    purpose: "Resume o real, projetado, meta e confianca anual de cada indicador.",
+    howToUse: "Use para leitura executiva do ano. Executivos podem clicar em Meta Anual ou Confianca para editar o planejamento anual.",
+    tableStructure: "Colunas: Indicador, Tipo, Real Anual, Projetado Anual, Meta Anual e Confianca."
+  },
+  {
+    tab: "Consolidacao",
+    item: "Consolidacao trimestral",
+    purpose: "Compara ultimo trimestre fechado com o trimestre vigente e destaca pendencias.",
+    howToUse: "Leia a coluna de completude para saber quantos meses e semanas possuem dados. O mes vigente aparece como aberto mesmo quando ja tem algum valor.",
+    tableStructure: "Colunas: Indicador, Tipo, Ultimo Trimestre Fechado, Trimestre Vigente, Analise, Completude, Meta Trimestral, Meta Anual, Confianca e Observacao."
+  },
+  {
+    tab: "Drill Down Comercial",
+    item: "Por Indicador",
+    purpose: "Detalha indicadores comerciais por responsavel e mes.",
+    howToUse: "Clique em uma celula com valor para abrir a lista de cards de origem no painel lateral.",
+    tableStructure: "Linhas por responsavel, colunas Jan-Dez e uma coluna de consolidado."
+  },
+  {
+    tab: "Drill Down Financeiro",
+    item: "Valores por unidade",
+    purpose: "Registra e acompanha indicadores financeiros por unidade.",
+    howToUse: "Usuarios com permissao de edicao clicam no mes da unidade para atualizar o valor mensal.",
+    tableStructure: "Linhas por unidade, colunas Jan-Dez e Total do periodo."
+  },
+  {
+    tab: "Drill Down Marketing",
+    item: "Por Canal",
+    purpose: "Acompanha indicadores de marketing por canal e mes.",
+    howToUse: "Clique em valores existentes para inspecionar os cards que formam o indicador.",
+    tableStructure: "Linhas por canal, colunas Jan-Dez e consolidado anual."
+  },
+  {
+    tab: "Issue Reports",
+    item: "Registro de ocorrencias",
+    purpose: "Centraliza anomalias, causas e propostas de solucao.",
+    howToUse: "Crie reports, filtre por area, status, solicitante, periodo e tags, e acompanhe a prioridade GUT.",
+    tableStructure: "Campos principais: ocorrencia, identificacao da causa, proposta de solucao, status, tags e prioridade."
+  },
+  {
+    tab: "Wins",
+    item: "Registro de ganhos",
+    purpose: "Centraliza ganhos, aprendizados e resultados positivos.",
+    howToUse: "Registre wins com area, descricao, causa, proposta e tags para consulta posterior.",
+    tableStructure: "Segue estrutura semelhante ao Issue Report, orientada a resultados positivos."
+  }
+];
+
 function PerformanceBadge({ value, classification }: { value: number | null; classification: string }) {
   return (
     <span className={`performance-badge performance-${classification}`} title={performanceLabels[classification] ?? classification}>
       {formatNumber(value)}
     </span>
+  );
+}
+
+function MultiSelectAutocomplete({
+  label,
+  options,
+  selectedValues,
+  onChange,
+  placeholder = "Buscar e adicionar",
+  datalistId
+}: {
+  label: string;
+  options: FilterOption[];
+  selectedValues: string[];
+  onChange: (values: string[]) => void;
+  placeholder?: string;
+  datalistId: string;
+}) {
+  const [inputValue, setInputValue] = useState("");
+  const selectedSet = new Set(selectedValues);
+  const filterNeedle = normalizeText(inputValue.trim());
+  const selectedOptions = selectedValues
+    .map((value) => options.find((option) => option.value === value))
+    .filter((option): option is FilterOption => Boolean(option));
+  const availableOptions = options.filter((option) => !selectedSet.has(option.value));
+  const visibleOptions = availableOptions
+    .filter((option) => !filterNeedle || normalizeText(option.label).includes(filterNeedle))
+    .slice(0, 8);
+
+  function addOption(rawValue: string): void {
+    const normalized = normalizeText(rawValue.trim());
+    if (!normalized) return;
+    const option = availableOptions.find(
+      (item) => normalizeText(item.label) === normalized || normalizeText(item.value) === normalized
+    );
+    if (!option) return;
+    onChange([...selectedValues, option.value]);
+    setInputValue("");
+  }
+
+  function removeOption(value: string): void {
+    onChange(selectedValues.filter((item) => item !== value));
+  }
+
+  return (
+    <label className="multi-filter">
+      {label}
+      <div className="multi-filter-control">
+        <input
+          value={inputValue}
+          placeholder={placeholder}
+          onChange={(event) => setInputValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              const exactOption = availableOptions.find((item) => normalizeText(item.label) === normalizeText(inputValue.trim()));
+              addOption(exactOption?.label ?? visibleOptions[0]?.label ?? inputValue);
+            }
+          }}
+        />
+      </div>
+      {inputValue.trim() && visibleOptions.length > 0 ? (
+        <div className="multi-filter-options" id={datalistId}>
+          {visibleOptions.map((option) => (
+            <button type="button" className="multi-filter-option" key={option.value} onClick={() => addOption(option.label)}>
+              {option.label}
+            </button>
+          ))}
+        </div>
+      ) : inputValue.trim() ? (
+        <span className="muted filter-empty">Nenhuma opcao encontrada</span>
+      ) : null}
+      <div className="filter-chips">
+        {selectedOptions.map((option) => (
+          <button type="button" className="filter-chip" key={option.value} onClick={() => removeOption(option.value)}>
+            {option.label} x
+          </button>
+        ))}
+        {selectedOptions.length > 0 ? (
+          <button type="button" className="filter-chip clear-chip" onClick={() => onChange([])}>Limpar</button>
+        ) : (
+          <span className="muted filter-empty">Todos</span>
+        )}
+      </div>
+    </label>
   );
 }
 
@@ -314,20 +479,21 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
   const [commercialViewMode, setCommercialViewMode] = useState<DrilldownViewMode>("indicator");
   const [financialViewMode, setFinancialViewMode] = useState<DrilldownViewMode>("indicator");
   const [marketingViewMode, setMarketingViewMode] = useState<DrilldownViewMode>("indicator");
-  const [search, setSearch] = useState("");
+  const [indicatorFilter, setIndicatorFilter] = useState<string[]>([]);
+  const [manualSearch, setManualSearch] = useState("");
   const [indicatorAreaFilter, setIndicatorAreaFilter] = useState<string[]>([]);
   const [issueSearch, setIssueSearch] = useState("");
-  const [issueAreaFilter, setIssueAreaFilter] = useState("");
-  const [issueStatusFilter, setIssueStatusFilter] = useState("");
-  const [issueRequesterFilter, setIssueRequesterFilter] = useState("");
+  const [issueAreaFilter, setIssueAreaFilter] = useState<string[]>([]);
+  const [issueStatusFilter, setIssueStatusFilter] = useState<string[]>([]);
+  const [issueRequesterFilter, setIssueRequesterFilter] = useState<string[]>([]);
   const [issueDateFrom, setIssueDateFrom] = useState("");
   const [issueDateTo, setIssueDateTo] = useState("");
   const [issueTagFilter, setIssueTagFilter] = useState<string[]>([]);
   const [issueSort, setIssueSort] = useState<IssueSortMode>("executive");
   const [winSearch, setWinSearch] = useState("");
-  const [winAreaFilter, setWinAreaFilter] = useState("");
-  const [winStatusFilter, setWinStatusFilter] = useState("");
-  const [winRequesterFilter, setWinRequesterFilter] = useState("");
+  const [winAreaFilter, setWinAreaFilter] = useState<string[]>([]);
+  const [winStatusFilter, setWinStatusFilter] = useState<string[]>([]);
+  const [winRequesterFilter, setWinRequesterFilter] = useState<string[]>([]);
   const [winDateFrom, setWinDateFrom] = useState("");
   const [winDateTo, setWinDateTo] = useState("");
   const [winTagFilter, setWinTagFilter] = useState<string[]>([]);
@@ -396,26 +562,37 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
   const currentMonth = year === new Date().getFullYear() ? new Date().getMonth() + 1 : null;
 
   const filteredIndicators = useMemo(() => {
-    const needle = search.trim().toLowerCase();
+    const indicatorSet = new Set(indicatorFilter);
     const areaSet = new Set(indicatorAreaFilter);
     return indicators.filter((row) => {
-      const matchesText = !needle || `${row.indicatorName} ${row.areaName ?? ""}`.toLowerCase().includes(needle);
+      const matchesIndicator = indicatorSet.size === 0 || indicatorSet.has(row.indicatorId);
       const matchesArea = areaSet.size === 0 || areaSet.has(row.areaId);
-      return matchesText && matchesArea;
+      return matchesIndicator && matchesArea;
     });
-  }, [indicatorAreaFilter, indicators, search]);
+  }, [indicatorAreaFilter, indicatorFilter, indicators]);
+
+  const filteredManualSections = useMemo(() => {
+    const needle = normalizeText(manualSearch.trim());
+    if (!needle) return userManualSections;
+    return userManualSections.filter((section) =>
+      normalizeText(`${section.tab} ${section.item} ${section.purpose} ${section.howToUse} ${section.tableStructure}`).includes(needle)
+    );
+  }, [manualSearch]);
 
   const filteredIssues = useMemo(() => {
     const needle = normalizeText(issueSearch.trim());
+    const selectedAreaIds = new Set(issueAreaFilter);
+    const selectedStatuses = new Set(issueStatusFilter);
+    const selectedRequesterIds = new Set(issueRequesterFilter);
     const selectedTagIds = new Set(issueTagFilter);
     const from = issueDateFrom ? new Date(`${issueDateFrom}T00:00:00`) : null;
     const to = issueDateTo ? new Date(`${issueDateTo}T23:59:59`) : null;
     return issues
       .filter((issue) => {
         const areaId = issue.isOtherArea ? "__other__" : issue.areaId ?? "";
-        const matchesArea = !issueAreaFilter || issueAreaFilter === areaId;
-        const matchesStatus = !issueStatusFilter || formatStatus(issue.status) === issueStatusFilter;
-        const matchesRequester = !issueRequesterFilter || issue.requesterId === issueRequesterFilter;
+        const matchesArea = selectedAreaIds.size === 0 || selectedAreaIds.has(areaId);
+        const matchesStatus = selectedStatuses.size === 0 || selectedStatuses.has(formatStatus(issue.status));
+        const matchesRequester = selectedRequesterIds.size === 0 || selectedRequesterIds.has(issue.requesterId);
         const createdAt = issue.createdAt ? new Date(issue.createdAt) : new Date(0);
         const matchesDate = (!from || createdAt >= from) && (!to || createdAt <= to);
         const issueTagIds = new Set(issue.tags.map((tag) => tag.id));
@@ -432,15 +609,18 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
 
   const filteredWins = useMemo(() => {
     const needle = normalizeText(winSearch.trim());
+    const selectedAreaIds = new Set(winAreaFilter);
+    const selectedStatuses = new Set(winStatusFilter);
+    const selectedRequesterIds = new Set(winRequesterFilter);
     const selectedTagIds = new Set(winTagFilter);
     const from = winDateFrom ? new Date(`${winDateFrom}T00:00:00`) : null;
     const to = winDateTo ? new Date(`${winDateTo}T23:59:59`) : null;
     return wins
       .filter((win) => {
         const areaId = win.isOtherArea ? "__other__" : win.areaId ?? "";
-        const matchesArea = !winAreaFilter || winAreaFilter === areaId;
-        const matchesStatus = !winStatusFilter || formatStatus(win.status) === winStatusFilter;
-        const matchesRequester = !winRequesterFilter || win.requesterId === winRequesterFilter;
+        const matchesArea = selectedAreaIds.size === 0 || selectedAreaIds.has(areaId);
+        const matchesStatus = selectedStatuses.size === 0 || selectedStatuses.has(formatStatus(win.status));
+        const matchesRequester = selectedRequesterIds.size === 0 || selectedRequesterIds.has(win.requesterId);
         const createdAt = win.createdAt ? new Date(win.createdAt) : new Date(0);
         const matchesDate = (!from || createdAt >= from) && (!to || createdAt <= to);
         const winTagIds = new Set(win.tags.map((tag) => tag.id));
@@ -469,6 +649,53 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
   }, [wins]);
 
   const winTitles = useMemo(() => [...new Set(wins.map((win) => win.title).filter(Boolean))], [wins]);
+  const areaFilterOptions = useMemo<FilterOption[]>(
+    () => [
+      { value: "__other__", label: "Outras" },
+      ...areas.map((area) => ({ value: area.id, label: area.name }))
+    ],
+    [areas]
+  );
+  const indicatorAreaOptions = useMemo<FilterOption[]>(
+    () => {
+      const options = new Map<string, string>();
+      indicators.forEach((row) => {
+        if (row.areaId) options.set(row.areaId, row.areaName ?? row.areaId);
+      });
+      return [...options.entries()]
+        .map(([value, label]) => ({ value, label }))
+        .sort((left, right) => left.label.localeCompare(right.label));
+    },
+    [indicators]
+  );
+  const indicatorFilterOptions = useMemo<FilterOption[]>(() => {
+    return indicators
+      .map((row) => ({
+        value: row.indicatorId,
+        label: row.unit ? `${row.indicatorName} - ${row.unit}` : row.indicatorName
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label));
+  }, [indicators]);
+  const issueRequesterOptions = useMemo<FilterOption[]>(
+    () => issueRequesters.map(([requesterId, requesterName]) => ({ value: requesterId, label: requesterName })),
+    [issueRequesters]
+  );
+  const winRequesterOptions = useMemo<FilterOption[]>(
+    () => winRequesters.map(([requesterId, requesterName]) => ({ value: requesterId, label: requesterName })),
+    [winRequesters]
+  );
+  const issueStatusOptions = useMemo<FilterOption[]>(
+    () => issueStatuses.map((statusOption) => ({ value: statusOption, label: statusOption })),
+    []
+  );
+  const issueTagOptions = useMemo<FilterOption[]>(
+    () => issueTags.map((tag) => ({ value: tag.id, label: tag.name })),
+    [issueTags]
+  );
+  const winTagOptions = useMemo<FilterOption[]>(
+    () => winTags.map((tag) => ({ value: tag.id, label: tag.name })),
+    [winTags]
+  );
 
   const loadIndicators = useCallback(async () => {
     setLoading(true);
@@ -1399,6 +1626,76 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
     setStatus("Exportacao de Issues gerada.");
   }
 
+  function exportCommercialDrilldownCsv() {
+    if (!commercialDashboard) return;
+    const rows: Array<Array<string | number | null | undefined>> = [
+      ["Indicador", "Tipo", "Unidade", "Responsavel", "Ativo", ...months, "Consolidado"],
+      ...commercialDashboard.metrics.flatMap((metric) =>
+        metric.rows.map((row) => [
+          metric.label,
+          metric.kind === "flow" ? "Fluxo" : "Estoque",
+          metric.unit === "money" ? "R$" : "Quantidade",
+          row.responsibleName,
+          row.responsibleActive ? "Sim" : "Nao",
+          ...months.map((_monthLabel, index) => row.months[String(index + 1)]),
+          row.annualSummary
+        ])
+      )
+    ];
+    downloadCsv(`psc-drilldown-comercial-${year}-${exportDateStamp()}.csv`, rows);
+    setStatus("Exportacao do Drill Down Comercial gerada.");
+  }
+
+  function exportFinancialDrilldownCsv() {
+    if (!financialDashboard) return;
+    const rows: Array<Array<string | number | null | undefined>> = [
+      ["Indicador", "Agregacao", "Tipo de valor", "Unidade", ...months, "Total"],
+      ...financialDashboard.tables.flatMap((table) =>
+        table.rows.map((row) => [
+          table.indicator.name,
+          table.indicator.aggregationType,
+          table.indicator.valueType,
+          row.unitName,
+          ...months.map((_monthLabel, index) => row.months[String(index + 1)]),
+          row.periodTotal
+        ])
+      )
+    ];
+    downloadCsv(`psc-drilldown-financeiro-${year}-${exportDateStamp()}.csv`, rows);
+    setStatus("Exportacao do Drill Down Financeiro gerada.");
+  }
+
+  function exportMarketingDrilldownCsv() {
+    if (!marketingDashboard) return;
+    const rows: Array<Array<string | number | null | undefined>> = [
+      [
+        "Indicador",
+        "Indicador Vinculado",
+        "Tipo",
+        "Unidade",
+        "Canal",
+        ...months.flatMap((month) => [`${month} Valor`, `${month} Numerador`, `${month} Denominador`]),
+        "Consolidado"
+      ],
+      ...marketingDashboard.metrics.flatMap((metric) =>
+        metric.rows.map((row) => [
+          metric.label,
+          metric.indicatorName,
+          metric.kind === "ratio" ? "Taxa" : "Fluxo",
+          metric.unit === "percentage" ? "%" : "Quantidade",
+          row.channel,
+          ...months.flatMap((_monthLabel, index) => {
+            const month = String(index + 1);
+            return [row.months[month], row.numeratorMonths[month], row.denominatorMonths[month]];
+          }),
+          row.annualSummary
+        ])
+      )
+    ];
+    downloadCsv(`psc-drilldown-marketing-${year}-${exportDateStamp()}.csv`, rows);
+    setStatus("Exportacao do Drill Down Marketing gerada.");
+  }
+
   function renderDrilldownModeButtons(mode: DrilldownViewMode, setMode: (mode: DrilldownViewMode) => void) {
     return (
       <div className="toolbar-actions filters-row">
@@ -1635,6 +1932,9 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
         <button className={`tab-btn ${activeTab === "consolidation" ? "active" : ""}`} type="button" onClick={() => setActiveTab("consolidation")}>
           Consolidação
         </button>
+        <button className={`tab-btn ${activeTab === "manual" ? "active" : ""}`} type="button" onClick={() => setActiveTab("manual")}>
+          Manual
+        </button>
         {canUseCommercial ? (
           <button className={`tab-btn ${activeTab === "commercial" ? "active" : ""}`} type="button" onClick={() => setActiveTab("commercial")}>
             Drill Down Comercial
@@ -1665,23 +1965,20 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
       {activeTab === "indicators" ? (
         <section className="card app-view">
           <div className="toolbar-actions filters-row">
-            <label>
-              Filtrar indicador ou area
-              <input value={search} onChange={(event) => setSearch(event.target.value)} />
-            </label>
-            {isExecutive ? (
-              <label>
-                Areas
-                <select
-                  multiple
-                  size={4}
-                  value={indicatorAreaFilter}
-                  onChange={(event) => setIndicatorAreaFilter(Array.from(event.target.selectedOptions).map((option) => option.value))}
-                >
-                  {areas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}
-                </select>
-              </label>
-            ) : null}
+            <MultiSelectAutocomplete
+              label="Indicadores"
+              options={indicatorFilterOptions}
+              selectedValues={indicatorFilter}
+              onChange={setIndicatorFilter}
+              datalistId="indicator-filter-options"
+            />
+            <MultiSelectAutocomplete
+              label="Areas"
+              options={indicatorAreaOptions}
+              selectedValues={indicatorAreaFilter}
+              onChange={setIndicatorAreaFilter}
+              datalistId="indicator-area-filter-options"
+            />
           </div>
           {isExecutive ? (
             <>
@@ -1782,11 +2079,10 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                             title={isExecutive ? "Cadastrar planejamento mensal" : canEditIndicator(row) ? "Editar valores" : undefined}
                           >
                             <div className="month-cell">
-                              <span className={item.belowTarget ? "month-value below-target" : "month-value"}>{item.notApplicable ? "N/A" : formatNumber(item.value)}</span>
-                              <span className="month-target">{monthStatusLabel(item.status)}</span>
+                              <span className="month-projected">Proj. {formatNumber(item.projectedValue)}</span>
+                              <span className={item.belowTarget ? "month-value below-target" : "month-value"}>{formatNumber(item.value)}</span>
                               {item.valueSource === "financial_drilldown" ? <span className="month-source">DD Fin.</span> : null}
                               {item.valueSource === "marketing_drilldown" ? <span className="month-source">DD Mkt.</span> : null}
-                              <span className="month-projected">Proj. {formatNumber(item.projectedValue)}</span>
                               <span className="month-target">Meta {formatNumber(item.monthlyTarget)}</span>
                             </div>
                           </td>
@@ -1803,23 +2099,20 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
       ) : activeTab === "consolidation" ? (
         <section className="card app-view">
           <div className="toolbar-actions filters-row">
-            <label>
-              Filtrar indicador ou area
-              <input value={search} onChange={(event) => setSearch(event.target.value)} />
-            </label>
-            {isExecutive ? (
-              <label>
-                Areas
-                <select
-                  multiple
-                  size={4}
-                  value={indicatorAreaFilter}
-                  onChange={(event) => setIndicatorAreaFilter(Array.from(event.target.selectedOptions).map((option) => option.value))}
-                >
-                  {areas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}
-                </select>
-              </label>
-            ) : null}
+            <MultiSelectAutocomplete
+              label="Indicadores"
+              options={indicatorFilterOptions}
+              selectedValues={indicatorFilter}
+              onChange={setIndicatorFilter}
+              datalistId="consolidation-indicator-filter-options"
+            />
+            <MultiSelectAutocomplete
+              label="Areas"
+              options={indicatorAreaOptions}
+              selectedValues={indicatorAreaFilter}
+              onChange={setIndicatorAreaFilter}
+              datalistId="consolidation-area-filter-options"
+            />
           </div>
           <div className="table-wrap">
             <div className="indicator-table-panel">
@@ -1857,13 +2150,14 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
             <div className="indicator-table-panel">
               <table className="indicator-table">
                 <thead>
-                  <tr><th colSpan={9} className="section-header">Consolidação Trimestral</th></tr>
+                  <tr><th colSpan={10} className="section-header">Consolidação Trimestral</th></tr>
                   <tr>
                     <th>Indicador</th>
                     <th>Tipo</th>
                     <th>Último Trimestre Fechado</th>
                     <th>Trimestre Vigente</th>
                     <th>Análise do Trimestre Vigente</th>
+                    <th>Completude</th>
                     <th>Meta Trimestral</th>
                     <th>Meta Anual</th>
                     <th>Confiança</th>
@@ -1881,6 +2175,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                         <td>{closed ? `${closed.label}: ${formatNumber(closed.value)}` : "-"}</td>
                         <td>{current ? `${current.label}: ${formatNumber(current.value)}` : "-"}</td>
                         <td>{current?.analysis ?? "-"}</td>
+                        <td>{formatQuarterCompleteness(current)}</td>
                         <td>{formatNumber(current?.target ?? null)}</td>
                         <td>{formatNumber(row.annualTarget)}</td>
                         <td><PerformanceBadge value={row.confidenceLevel} classification={row.confidenceClassification} /></td>
@@ -1894,6 +2189,43 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
             {filteredIndicators.length === 0 ? <div className="empty-table-message muted">Nenhum indicador encontrado.</div> : null}
           </div>
         </section>
+      ) : activeTab === "manual" ? (
+        <section className="card app-view manual-view">
+          <div className="toolbar-actions filters-row">
+            <label>
+              Filtrar item do manual
+              <input value={manualSearch} onChange={(event) => setManualSearch(event.target.value)} />
+            </label>
+          </div>
+          <div className="table-wrap">
+            <div className="indicator-table-panel">
+              <table className="indicator-table manual-table">
+                <thead>
+                  <tr><th colSpan={5} className="section-header">Manual de Uso</th></tr>
+                  <tr>
+                    <th>Aba</th>
+                    <th>Item</th>
+                    <th>Para que serve</th>
+                    <th>Como usar</th>
+                    <th>Estrutura da tabela</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredManualSections.map((section) => (
+                    <tr key={`${section.tab}-${section.item}`}>
+                      <td>{section.tab}</td>
+                      <td>{section.item}</td>
+                      <td>{section.purpose}</td>
+                      <td>{section.howToUse}</td>
+                      <td>{section.tableStructure}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {filteredManualSections.length === 0 ? <div className="empty-table-message muted">Nenhum item do manual encontrado.</div> : null}
+          </div>
+        </section>
       ) : activeTab === "commercial" ? (
         <section className="card app-view commercial-view">
           <div className="toolbar">
@@ -1905,6 +2237,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
             </div>
             <div className="toolbar-actions">
               {commercialDashboard?.activeJob ? <span className="status-pill">Sincronizacao em andamento</span> : null}
+              <button type="button" className="secondary" onClick={exportCommercialDrilldownCsv} disabled={!commercialDashboard}>Exportar CSV</button>
               {user.canAdminUsers ? <button type="button" className="secondary" onClick={startCommercialSync}>Sincronizar agora</button> : null}
               <button type="button" onClick={loadCommercialDashboard} disabled={commercialLoading}>Recarregar</button>
             </div>
@@ -2036,6 +2369,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
             </div>
             <div className="toolbar-actions">
               {canEditFinancial ? <span className="status-pill">Edicao liberada</span> : null}
+              <button type="button" className="secondary" onClick={exportFinancialDrilldownCsv} disabled={!financialDashboard}>Exportar CSV</button>
               <button type="button" onClick={loadFinancialDashboard} disabled={financialLoading}>Recarregar</button>
             </div>
           </div>
@@ -2105,6 +2439,7 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
             </div>
             <div className="toolbar-actions">
               {marketingDashboard?.activeJob ? <span className="status-pill">Sincronizacao em andamento</span> : null}
+              <button type="button" className="secondary" onClick={exportMarketingDrilldownCsv} disabled={!marketingDashboard}>Exportar CSV</button>
               {canAdmin ? <button type="button" className="secondary" onClick={startMarketingSync}>Sincronizar agora</button> : null}
               <button type="button" onClick={loadMarketingDashboard} disabled={marketingLoading}>Recarregar</button>
             </div>
@@ -2361,32 +2696,27 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
               Data final
               <input type="date" value={issueDateTo} onChange={(event) => setIssueDateTo(event.target.value)} />
             </label>
-            <label>
-              Solicitante
-              <select value={issueRequesterFilter} onChange={(event) => setIssueRequesterFilter(event.target.value)}>
-                <option value="">Todos</option>
-                {issueRequesters.map(([requesterId, requesterName]) => <option key={requesterId} value={requesterId}>{requesterName}</option>)}
-              </select>
-            </label>
-            <label>
-              Area
-              <select value={issueAreaFilter} onChange={(event) => setIssueAreaFilter(event.target.value)}>
-                <option value="">Todas</option>
-                <option value="__other__">Outras</option>
-                {areas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}
-              </select>
-            </label>
-            <label>
-              Tags
-              <select
-                multiple
-                size={3}
-                value={issueTagFilter}
-                onChange={(event) => setIssueTagFilter(Array.from(event.target.selectedOptions).map((option) => option.value))}
-              >
-                {issueTags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
-              </select>
-            </label>
+            <MultiSelectAutocomplete
+              label="Solicitante"
+              options={issueRequesterOptions}
+              selectedValues={issueRequesterFilter}
+              onChange={setIssueRequesterFilter}
+              datalistId="issue-requester-filter-options"
+            />
+            <MultiSelectAutocomplete
+              label="Area"
+              options={areaFilterOptions}
+              selectedValues={issueAreaFilter}
+              onChange={setIssueAreaFilter}
+              datalistId="issue-area-filter-options"
+            />
+            <MultiSelectAutocomplete
+              label="Tags"
+              options={issueTagOptions}
+              selectedValues={issueTagFilter}
+              onChange={setIssueTagFilter}
+              datalistId="issue-tag-filter-options"
+            />
             <label>
               Buscar Issue
               <input list="issue-title-suggestions" value={issueSearch} onChange={(event) => setIssueSearch(event.target.value)} />
@@ -2394,13 +2724,13 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                 {issueTitles.map((title) => <option key={title} value={title} />)}
               </datalist>
             </label>
-            <label>
-              Status
-              <select value={issueStatusFilter} onChange={(event) => setIssueStatusFilter(event.target.value)}>
-                <option value="">Todos</option>
-                {issueStatuses.map((statusOption) => <option key={statusOption} value={statusOption}>{statusOption}</option>)}
-              </select>
-            </label>
+            <MultiSelectAutocomplete
+              label="Status"
+              options={issueStatusOptions}
+              selectedValues={issueStatusFilter}
+              onChange={setIssueStatusFilter}
+              datalistId="issue-status-filter-options"
+            />
             <label>
               Ordenar por
               <select value={issueSort} onChange={(event) => setIssueSort(event.target.value as IssueSortMode)}>
@@ -2579,32 +2909,27 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
               Data final
               <input type="date" value={winDateTo} onChange={(event) => setWinDateTo(event.target.value)} />
             </label>
-            <label>
-              Solicitante
-              <select value={winRequesterFilter} onChange={(event) => setWinRequesterFilter(event.target.value)}>
-                <option value="">Todos</option>
-                {winRequesters.map(([requesterId, requesterName]) => <option key={requesterId} value={requesterId}>{requesterName}</option>)}
-              </select>
-            </label>
-            <label>
-              Area
-              <select value={winAreaFilter} onChange={(event) => setWinAreaFilter(event.target.value)}>
-                <option value="">Todas</option>
-                <option value="__other__">Outras</option>
-                {areas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}
-              </select>
-            </label>
-            <label>
-              Tags
-              <select
-                multiple
-                size={3}
-                value={winTagFilter}
-                onChange={(event) => setWinTagFilter(Array.from(event.target.selectedOptions).map((option) => option.value))}
-              >
-                {winTags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
-              </select>
-            </label>
+            <MultiSelectAutocomplete
+              label="Solicitante"
+              options={winRequesterOptions}
+              selectedValues={winRequesterFilter}
+              onChange={setWinRequesterFilter}
+              datalistId="win-requester-filter-options"
+            />
+            <MultiSelectAutocomplete
+              label="Area"
+              options={areaFilterOptions}
+              selectedValues={winAreaFilter}
+              onChange={setWinAreaFilter}
+              datalistId="win-area-filter-options"
+            />
+            <MultiSelectAutocomplete
+              label="Tags"
+              options={winTagOptions}
+              selectedValues={winTagFilter}
+              onChange={setWinTagFilter}
+              datalistId="win-tag-filter-options"
+            />
             <label>
               Buscar Win
               <input list="win-title-suggestions" value={winSearch} onChange={(event) => setWinSearch(event.target.value)} />
@@ -2612,13 +2937,13 @@ export default function DashboardClient({ initialUser }: { initialUser: User }) 
                 {winTitles.map((title) => <option key={title} value={title} />)}
               </datalist>
             </label>
-            <label>
-              Status
-              <select value={winStatusFilter} onChange={(event) => setWinStatusFilter(event.target.value)}>
-                <option value="">Todos</option>
-                {issueStatuses.map((statusOption) => <option key={statusOption} value={statusOption}>{statusOption}</option>)}
-              </select>
-            </label>
+            <MultiSelectAutocomplete
+              label="Status"
+              options={issueStatusOptions}
+              selectedValues={winStatusFilter}
+              onChange={setWinStatusFilter}
+              datalistId="win-status-filter-options"
+            />
             <label>
               Ordenar por
               <select value={winSort} onChange={(event) => setWinSort(event.target.value as IssueSortMode)}>
